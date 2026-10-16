@@ -4,6 +4,6 @@
   "buildCommand": "npm run build -w @arch-flow/domain && npm run build -w @arch-flow/messaging && npm run build -w @arch-flow/web",
   "outputDirectory": "apps/web/.next",
   "crons": [
-    { "path": "/api/cron/tick", "schedule": "30 3 * * *" }
+    { "path": "/api/cron/tick", "schedule": "* * * * *" }
   ]
 }

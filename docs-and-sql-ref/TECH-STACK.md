@@ -8,8 +8,9 @@ This replaces the earlier stack. Hostinger, Docker, Netlify and the whatsapp-web
 | Hosting | Vercel | Matches the Vercel-only deployment decision. Routes run the messaging code. |
 | Database, auth, storage | Supabase (Postgres, Auth, Storage, RLS) | Row-level security enforced in the database; signed upload URLs for large files |
 | Server data access | Service-role client in server code; user tokens for direct reads under RLS | Keeps rules in one place; RLS is tested |
-| WhatsApp | WhatsApp Cloud API (Meta Graph v21.0 default) | Works without an always-on process. Replaces whatsapp-web.js. |
-| Scheduling | Vercel Cron → `GET /api/cron/tick` (daily on Hobby) | Digest, escalations, checks and outbox pass |
+| WhatsApp (pilot) | whatsapp-web.js in `apps/whatsapp-web` (`WhatsAppWeb.js`), QR login, dedicated test number, owner and allowlisted numbers only | Needs an always-on host. Session encrypted in Supabase (AES-256-GCM). Unofficial API: accepted ban risk. |
+| WhatsApp (clients, production) | WhatsApp Cloud API (Meta Graph v21.0 default) | Official channel for client-facing messages. |
+| Scheduling | Vercel Cron → `GET /api/cron/tick` every minute (Pro) | Digest, escalations, checks and outbox pass |
 | Immediate sends | `after()` in route handlers after events and webhooks | Messages go out without waiting for the next cron run |
 | AI wording | Gemini via `@google/genai`, server only | Optional. Output is checked against source numbers. |
 | CAD | Autodesk Platform Services: OSS signed upload, Model Derivative (svf2), Viewer SDK | Translates DWG, RVT, IFC, NWD for viewing. Endpoints not yet verified live. |
@@ -23,7 +24,7 @@ This replaces the earlier stack. Hostinger, Docker, Netlify and the whatsapp-web
 
 - Hostinger hosting and the Hostinger-hosted worker. Not needed on Vercel.
 - Docker image for the worker. Docker is not available in the build environment.
-- whatsapp-web.js and Puppeteer. Replaced by the Cloud API.
+- The whatsapp-web.js worker from the first design. Replaced by the Vercel routes plus the `apps/whatsapp-web` process. Vercel itself cannot hold a WhatsApp Web session.
 - Netlify configuration.
 
 ## Configuration

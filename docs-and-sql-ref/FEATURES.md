@@ -19,7 +19,7 @@
 | Dashboards and reports | DSH, REG-07, CHG-03 | Built | PDF and Excel exports from `/api/reports/[report]`. |
 | Client portal | CLI, CFL | Built, not live-tested | Conflict threads and issued drawing views. RLS tests cover client isolation. |
 | Notifications | NTF | Built | In-app notifications. |
-| WhatsApp alerts | WA | Built on Cloud API | Needs Meta credentials, a test number and an approved template. Inbound commands via webhook. |
+| WhatsApp alerts | WA | Built: pilot via WhatsApp Web process, production via Cloud API | Pilot needs a QR scan on the test number and an always-on host. Cloud API needs Meta credentials and an approved template. Owner commands are allowlisted. |
 | Digest | DIG | Built | Deterministic text always works. Gemini wording needs a key. |
 | Critical rules | RUL | Built | Draft rules until the owner edits them. |
 

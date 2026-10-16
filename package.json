@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "npm run build -w @arch-flow/domain && npm run build -w @arch-flow/messaging && npm run build -w @arch-flow/web",
-    "test": "npm run test -w @arch-flow/domain && npm run test -w @arch-flow/messaging",
+    "test": "npm run test -w @arch-flow/domain && npm run test -w @arch-flow/messaging && npm run test -w @arch-flow/whatsapp-web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "e2e": "npm run e2e -w @arch-flow/web"
   }

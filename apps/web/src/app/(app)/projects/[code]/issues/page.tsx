@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireInternal, projectByCode, canSee } from '@/lib/access';
 import { adminDb } from '@/lib/supabase/admin';
@@ -37,7 +38,7 @@ export default async function IssuesPage({ params }: { params: Promise<{ code: s
             <tbody>
               {(clashes ?? []).map((c) => (
                 <tr key={c.id}>
-                  <td className={td}><span className="font-medium">{c.number}</span><div className="text-xs text-text-muted">{c.title}</div></td>
+                  <td className={td}><Link className="font-medium underline" href={`/projects/${code}/issues/${c.id}`}>{c.number}</Link><div className="text-xs text-text-muted">{c.title}</div></td>
                   <td className={td}>{c.discipline_a ?? '—'} / {c.discipline_b ?? '—'}</td>
                   <td className={td}><Badge tone={c.priority === 'critical' ? 'error' : 'neutral'}>{c.priority}</Badge></td>
                   <td className={td}>{c.status}</td>

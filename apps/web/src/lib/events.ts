@@ -34,7 +34,7 @@ export async function recordEvent(input: EventInput): Promise<void> {
  * Skipped when WhatsApp is not configured; the cron pass still runs.
  */
 export function scheduleFlush(): void {
-  if (!messagingStatus().whatsappCloud) return;
+  if (!messagingStatus().sending) return;
   after(async () => {
     try {
       await messagingRuntime().flush();

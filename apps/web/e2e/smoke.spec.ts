@@ -11,6 +11,13 @@ test('unauthenticated visit to the dashboard goes to login', async ({ page }) =>
   await page.screenshot({ path: 'test-results/login-redirect.png', fullPage: true });
 });
 
+test('client portal and clash pages require sign-in', async ({ page }) => {
+  await page.goto('/portal/files/00000000-0000-0000-0000-000000000000');
+  await expect(page).toHaveURL(/\/login/);
+  await page.goto('/projects/ABC/issues/00000000-0000-0000-0000-000000000000');
+  await expect(page).toHaveURL(/\/login/);
+});
+
 test('login page renders the sign-in form', async ({ page }) => {
   await page.goto('/login');
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -28,7 +35,7 @@ test('health endpoint reports service status without secret values', async ({ re
   const res = await request.get('/api/health');
   expect(res.status()).toBeLessThan(600);
   const body = await res.json();
-  expect(body).toHaveProperty('whatsappCloud');
+  expect(body).toHaveProperty('whatsapp');
   expect(body).toHaveProperty('gemini');
   expect(JSON.stringify(body)).not.toContain(APP_SECRET);
   expect(JSON.stringify(body)).not.toContain(VERIFY_TOKEN);

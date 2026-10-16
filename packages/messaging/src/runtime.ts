@@ -17,13 +17,21 @@ import type { Clock, Transport } from './ports';
 
 export interface RuntimeConfig {
   appUrl: string;
-  cloud: {
+  /** Cloud API settings. Omit when another transport is used. */
+  cloud?: {
     phoneNumberId: string;
     accessToken: string;
     graphVersion: string;
     templateName: string;
     templateLanguage: string;
   };
+  /** Overrides the Cloud API transport, for example the WhatsApp Web session process. */
+  transport?: Transport;
+  /**
+   * False when another process sends the queue (the WhatsApp Web process). This runtime then
+   * only creates and fans out messages, so nothing is sent twice.
+   */
+  sendFromThisProcess?: boolean;
   geminiApiKey?: string;
   geminiModel?: string;
 }
@@ -36,18 +44,32 @@ export interface Runtime {
   flush(): Promise<{ sent: number; failed: number; held: number; cancelled: number; waiting: number }>;
   /** Handles one Cloud API webhook payload: inbound messages (commands) and delivery statuses. */
   handleWebhook(rawBody: string): Promise<{ messages: number; statuses: number }>;
+  /** Handles one inbound message from any transport (owner commands, STOP and START). */
+  handleInboundMessage(message: { fromPhone: string; body: string; messageId: string }): Promise<void>;
 }
+
+const NO_TRANSPORT: Transport = {
+  isConnected: () => false,
+  send: async () => {
+    throw new Error('No WhatsApp transport is configured in this process');
+  },
+};
 
 export function createRuntime(db: SupabaseClient, config: RuntimeConfig, clock: Clock = { now: () => new Date() }): Runtime {
   const adapter = new SupabaseAdapter(db);
-  const transport = createCloudTransport({
-    phoneNumberId: config.cloud.phoneNumberId,
-    accessToken: config.cloud.accessToken,
-    graphVersion: config.cloud.graphVersion,
-    templateName: config.cloud.templateName,
-    templateLanguage: config.cloud.templateLanguage,
-    isWindowOpen: (phone) => adapter.isWindowOpen(phone),
-  });
+  const sendFromThisProcess = config.sendFromThisProcess !== false;
+  const transport: Transport =
+    config.transport ??
+    (config.cloud
+      ? createCloudTransport({
+          phoneNumberId: config.cloud.phoneNumberId,
+          accessToken: config.cloud.accessToken,
+          graphVersion: config.cloud.graphVersion,
+          templateName: config.cloud.templateName,
+          templateLanguage: config.cloud.templateLanguage,
+          isWindowOpen: (phone) => adapter.isWindowOpen(phone),
+        })
+      : NO_TRANSPORT);
   const summariser: Summariser | null =
     config.geminiApiKey && config.geminiModel ? createGeminiSummariser(config.geminiApiKey, config.geminiModel) : null;
   const checks = createChecksPort(db);
@@ -58,13 +80,15 @@ export function createRuntime(db: SupabaseClient, config: RuntimeConfig, clock: 
     enabledEventTypes: () => adapter.enabledEventTypes(),
   };
   const outbox: OutboxDeps = { outbox: adapter, transport, clock };
+  const outboxForTick = sendFromThisProcess ? outbox : null;
   const schedule = { store: adapter, clock, appUrl: config.appUrl, digestSource: adapter, summariser };
 
   return {
     transport,
-    tick: () => runTick({ clock, fanout, outbox, schedule, checks }),
+    tick: () => runTick({ clock, fanout, outbox: outboxForTick, schedule, checks }),
     async flush() {
       await fanoutOnce(fanout);
+      if (!sendFromThisProcess) return { sent: 0, failed: 0, held: 0, cancelled: 0, waiting: 0 };
       const result = await processOutboxOnce(outbox);
       return { sent: result.sent, failed: result.failed, held: result.held, cancelled: result.cancelled, waiting: result.waiting };
     },
@@ -78,6 +102,10 @@ export function createRuntime(db: SupabaseClient, config: RuntimeConfig, clock: 
         await adapter.applyDeliveryStatus(status.messageId, status.status, status.error);
       }
       return { messages: parsed.messages.length, statuses: parsed.statuses.length };
+    },
+    async handleInboundMessage(message) {
+      await adapter.recordInbound(message);
+      await handleInbound({ inbound: adapter, clock }, message);
     },
   };
 }

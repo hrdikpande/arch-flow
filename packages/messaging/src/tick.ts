@@ -12,7 +12,8 @@ import type { Clock } from './ports';
 export interface TickDeps {
   clock: Clock;
   fanout: FanoutDeps;
-  outbox: OutboxDeps;
+  /** Null when another process sends the queued messages (queue-only mode). */
+  outbox: OutboxDeps | null;
   schedule: ScheduleDeps;
   checks: ChecksPort;
 }
@@ -34,6 +35,6 @@ export async function runTick(deps: TickDeps): Promise<TickSummary> {
   const digests = await runScheduledDigests(deps.schedule);
   const escalations = await runEscalations(deps.schedule);
   const conflictNotices = await runConflictOverdue(deps.schedule);
-  const out = await processOutboxOnce(deps.outbox);
+  const out = deps.outbox ? await processOutboxOnce(deps.outbox) : { sent: 0 };
   return { rfiOverdueEvents, staleRevisionEvents, queued: fan.queued, sent: out.sent, digests, escalations, conflictNotices };
 }

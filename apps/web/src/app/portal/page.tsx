@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { requireClient } from '@/lib/access';
 import { adminDb } from '@/lib/supabase/admin';
 import { formatDateOnly, formatIst } from '@/lib/format';
@@ -28,8 +29,9 @@ export default async function PortalHome() {
   const { data: conflicts } = await db.from('conflicts').select('id, subject, status, created_at').eq('client_org_id', access.clientOrgId ?? '').order('created_at', { ascending: false }).limit(50);
   const { data: transmittals } = await db.from('transmittals').select('id, number, sent_at, project_id').in('project_id', scope).not('sent_at', 'is', null).order('sent_at', { ascending: false }).limit(50);
 
+  const { data: org } = await db.from('client_orgs').select('allow_native_download').eq('id', access.clientOrgId ?? '').maybeSingle();
   const downloadUrls = new Map<string, string>();
-  for (const f of files ?? []) {
+  for (const f of org?.allow_native_download ? files ?? [] : []) {
     const { data } = await db.storage.from('drawings').createSignedUrl(f.storage_path, 300, { download: f.original_name });
     if (data) downloadUrls.set(f.id, data.signedUrl);
   }
@@ -54,7 +56,7 @@ export default async function PortalHome() {
                     <td className={`${td} tabular-nums`}>{rev?.rev_code}</td>
                     <td className={td}>{rev?.purpose ? <Badge tone="success">{rev.purpose.toUpperCase()}</Badge> : '—'}</td>
                     <td className={td}>{formatIst(rev?.issued_at ?? null)}</td>
-                    <td className={td}>{url ? <a className="font-semibold text-brand-700 underline" href={url}>Download {file?.format.toUpperCase()}</a> : <span className="text-text-muted">Not available</span>}</td>
+                    <td className={td}>{file ? <span className="flex flex-wrap gap-3"><Link className="font-semibold text-brand-700 underline" href={`/portal/files/${file.id}`}>View</Link>{url && <a className="font-semibold text-brand-700 underline" href={url}>Download {file.format.toUpperCase()}</a>}</span> : <span className="text-text-muted">Not available</span>}</td>
                   </tr>
                 );
               })}

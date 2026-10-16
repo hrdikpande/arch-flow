@@ -24,13 +24,19 @@ export default async function WhatsAppPage() {
       <PageHeader eyebrow="Owner" title="WhatsApp" description="The owner and up to four internal people receive alerts on the test number. Clients never receive WhatsApp." />
 
       <Card>
-        <h2 className="mb-2 text-lg font-semibold">WhatsApp Cloud API</h2>
-        {status.whatsappCloud ? (
-          <p className="text-sm"><Badge tone="success">Configured</Badge> <span className="text-text-secondary">Messages go through the Meta Cloud API. Inbound replies arrive at the webhook. Secrets are read from the server environment and never shown here.</span></p>
-        ) : (
-          <p className="text-sm"><Badge tone="warning">Not configured</Badge> <span className="text-text-secondary">Missing environment variables: {status.missing.join(', ')}.</span></p>
+        <h2 className="mb-2 text-lg font-semibold">Sending</h2>
+        {status.mode === 'web' && (
+          <p className="text-sm"><Badge tone="success">WhatsApp Web (pilot)</Badge> <span className="text-text-secondary">The WhatsApp Web process sends from the outbox. Use only the dedicated test number, and only to the owner and allowlisted people.</span></p>
         )}
-        <p className="mt-2 text-xs text-text-muted">Messages sent outside the 24-hour customer window use the approved template. Gemini digest text: {status.gemini ? 'configured' : 'not configured (deterministic text is used)'}.</p>
+        {status.mode === 'cloud' && (status.whatsappCloud ? (
+          <p className="text-sm"><Badge tone="success">Cloud API configured</Badge> <span className="text-text-secondary">Use for client-facing messages. Outside the 24-hour window only the approved template is sent.</span></p>
+        ) : (
+          <p className="text-sm"><Badge tone="warning">Cloud API not configured</Badge> <span className="text-text-secondary">Missing environment variables: {status.missing.join(', ')}.</span></p>
+        ))}
+        {status.mode === 'off' && (
+          <p className="text-sm"><Badge tone="neutral">Off</Badge> <span className="text-text-secondary">Events are recorded but nothing is sent. Set MESSAGING_TRANSPORT.</span></p>
+        )}
+        <p className="mt-2 text-xs text-text-muted">Gemini digest wording: {status.gemini ? 'configured' : 'not configured (deterministic text is used)'}. Secret values are never shown here.</p>
       </Card>
 
       <section className="flex flex-col gap-4">

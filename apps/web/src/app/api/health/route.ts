@@ -17,7 +17,7 @@ export async function GET() {
   return Response.json({
     ok: database === 'ok',
     database,
-    whatsappCloud: messaging.whatsappCloud ? 'configured' : `missing: ${messaging.missing.join(', ')}`,
+    whatsapp: messaging.mode === 'off' ? 'off (set MESSAGING_TRANSPORT)' : messaging.mode === 'web' ? 'web session process sends' : messaging.sending ? 'cloud configured' : `cloud missing: ${messaging.missing.join(', ')}`,
     gemini: messaging.gemini ? 'configured' : 'off',
     autodesk: process.env.APS_CLIENT_ID && process.env.APS_CLIENT_SECRET ? 'configured' : 'off',
     time: new Date().toISOString(),

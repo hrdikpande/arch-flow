@@ -204,3 +204,30 @@ These are known gaps that will be closed when the open items are answered. They 
 - whatsapp-web.js replaced by WhatsApp Cloud API (needs Meta approval for production templates).
 - Hostinger and Docker removed.
 - Clash import format still needs a real sample.
+
+---
+
+## 8. Run log: WhatsApp Web pilot, portal drawings, clash viewer (16 Oct 2026)
+
+| Check | Result |
+|---|---|
+| RLS suite, migrations 000000 to 000400 on PostgreSQL 16 | Passed (`RLS TESTS PASSED`). 13 decision and upload events seeded as enabled. |
+| Typecheck (all workspaces) | Passed |
+| Domain, messaging unit tests | 67 and 35 passed |
+| WhatsApp Web session helpers (`node --test`) | 5 passed: encrypt and decrypt, tamper and wrong-key rejection, key length, session store round trip with private zip mode |
+| Web unit tests | 12 passed |
+| Production build | Passed. Includes `/portal/files/[fileId]` and `/projects/[code]/issues/[id]`. |
+| Playwright smoke (Chromium) | 11 passed. Adds: portal and clash pages redirect to login when signed out. |
+
+### Not verified
+
+- **Real WhatsApp Web login and message flow.** This needs a QR scan on the test number, which I cannot do here. `createWhatsAppWeb` (the wiring of events, send and the outbox loop) has no automated test. The session store and encryption are tested.
+- **Autodesk translation and viewer**, Supabase signed-in flows, and the portal and clash pages with real data.
+- **Per-minute Vercel cron** on a Pro plan.
+
+### Decisions applied
+
+- Upload and decision events are on by default (13 events, confirmed 16 Oct 2026).
+- Client users may view PDF and CAD in the portal. CAD viewing needs the organisation's NDA flag (`allow_aps_processing`). Download needs `allow_native_download`.
+- Working days Monday to Friday, no holiday list yet.
+- Clash files use the same viewer as drawings. The clash export format is still undecided.
