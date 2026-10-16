@@ -306,3 +306,25 @@ Future changes: versioned migration files under `supabase/migrations/`, each rev
 Row-level security: `20261016000300_rls_complete.sql` adds read policies for every table. End users have no write policies; all writes go through server actions using the service role, which checks roles in code.
 
 Verification: `supabase/tests/run_rls_tests.sh` runs the fixture and 31 checks on PostgreSQL 16 with a stub `auth.uid()`. Passed on 16 Oct 2026. It does not test against Supabase's own Auth service.
+
+---
+
+## Additions, 16 Oct 2026 (migration `20261016000400_whatsapp_web.sql`)
+
+| Table or change | Purpose |
+|---|---|
+| `whatsapp_sessions` | Encrypted WhatsApp Web session (`ciphertext`, `iv`, `tag`). RLS on, no policies, no grants to `anon` or `authenticated`. Written only by the WhatsApp Web host with the service role. |
+| `whatsapp_event_settings` | The 13 alert events are enabled by default (confirmed 16 Oct 2026). |
+
+Settings keys read or written (table `settings`, `project_id` null):
+
+| Key | Value | Written by |
+|---|---|---|
+| `runtime.heartbeat` | `{at, connected, version}` | WhatsApp Web host, every 60 s |
+| `runtime.event_cursor` | last fanned-out event id | Messaging fan-out |
+| `digest.time_local` | `"HH:MM"` in IST (default `09:00`) | Admin settings |
+| `whatsapp.daily_cap` | messages per recipient per day (default 30) | Admin settings |
+| `approval.escalation_days` | working days before escalation (default 2) | Admin settings |
+
+`files.translation_attempts` (already in the init schema) counts translation attempts. A retry is allowed
+while it is below 3.

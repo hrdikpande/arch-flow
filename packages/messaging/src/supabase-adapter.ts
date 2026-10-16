@@ -658,8 +658,4 @@ export class SupabaseAdapter implements OutboxPort, FanoutPort, InboundPort, Dig
   }
 
   /** Stores an inbound message from the webhook. */
-  async recordInbound(row: { fromPhone: string; body: string; messageId: string }): Promise<void> {
-    const recipient = await this.recipientByPhone(row.fromPhone);
-    await this.logInbound({ fromPhone: row.fromPhone, recipientId: recipient?.id ?? null, body: row.body, command: null, allowed: Boolean(recipient) });
-  }
 }

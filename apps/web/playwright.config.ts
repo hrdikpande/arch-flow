@@ -7,6 +7,7 @@ const CHROMIUM = '/opt/pw-browsers/chromium';
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: /signed-in\.spec\.ts/,
   timeout: 30_000,
   fullyParallel: true,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
@@ -25,6 +26,7 @@ export default defineConfig({
     timeout: 120_000,
     env: {
       NEXT_TELEMETRY_DISABLED: '1',
+      MESSAGING_TRANSPORT: 'web',
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? 'https://placeholder.supabase.co',
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? 'placeholder-anon',
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? 'placeholder-service',

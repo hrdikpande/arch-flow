@@ -31,6 +31,7 @@ const { createRuntime } = require('@arch-flow/messaging');
 const { createSessionStore, createSupabaseRepository } = require('./session-store');
 
 const SESSION_NAME = 'arch-flow-pilot';
+const VERSION = 'whatsapp-web-pilot-1';
 const SESSION_ROW_ID = process.env.WA_SESSION_NAME || SESSION_NAME;
 
 function log(message, fields) {
@@ -51,6 +52,8 @@ function createWhatsAppWeb(options) {
     chromiumPath,
     dataPath,
     flushSeconds = 15,
+    heartbeatSeconds = 60,
+    exitProcess = (code) => process.exit(code),
     repository = createSupabaseRepository(db),
     ClientClass = Client,
     RemoteAuthClass = RemoteAuth,
@@ -59,6 +62,7 @@ function createWhatsAppWeb(options) {
 
   let ready = false;
   let flushTimer = null;
+  let heartbeatTimer = null;
   let flushing = false;
 
   const store = createSessionStore({ repository, sessionKey });
@@ -97,6 +101,7 @@ function createWhatsAppWeb(options) {
   client.on('ready', () => {
     ready = true;
     log('WhatsApp connected');
+    reportHeartbeat();
   });
   client.on('auth_failure', (message) => {
     ready = false;
@@ -105,9 +110,10 @@ function createWhatsAppWeb(options) {
   client.on('disconnected', (reason) => {
     ready = false;
     log('Disconnected. Exiting so the process supervisor restarts it.', { reason });
-    stop().finally(() => process.exit(1));
+    stop().finally(() => exitProcess(1));
   });
-  client.on('message', async (message) => {
+  /** Inbound: only one-to-one chats. Group and self messages are ignored. Allowlisting happens in the runtime. */
+  async function handleMessage(message) {
     if (message.fromMe || message.from.endsWith('@g.us')) return;
     const fromPhone = '+' + message.from.replace('@c.us', '');
     try {
@@ -115,7 +121,16 @@ function createWhatsAppWeb(options) {
     } catch (error) {
       log('Inbound handling failed', { error: error instanceof Error ? error.message : String(error) });
     }
-  });
+  }
+  client.on('message', handleMessage);
+
+  async function reportHeartbeat() {
+    try {
+      await runtime.heartbeat(ready, VERSION);
+    } catch (error) {
+      log('Heartbeat failed', { error: error instanceof Error ? error.message : String(error) });
+    }
+  }
 
   async function flushOnce() {
     if (flushing || !ready) return;
@@ -133,11 +148,15 @@ function createWhatsAppWeb(options) {
   async function start() {
     await client.initialize();
     flushTimer = setInterval(flushOnce, flushSeconds * 1000);
+    heartbeatTimer = setInterval(reportHeartbeat, heartbeatSeconds * 1000);
+    reportHeartbeat();
   }
 
   async function stop() {
     if (flushTimer) clearInterval(flushTimer);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     flushTimer = null;
+    heartbeatTimer = null;
     try {
       await client.destroy();
     } catch {
@@ -145,7 +164,7 @@ function createWhatsAppWeb(options) {
     }
   }
 
-  return { start, stop, isConnected: () => ready, runtime };
+  return { start, stop, isConnected: () => ready, runtime, handleMessage, flushNow: flushOnce, reportHeartbeat };
 }
 
 function loadConfig(env = process.env) {
@@ -159,6 +178,7 @@ function loadConfig(env = process.env) {
     appUrl: env.APP_URL.replace(/\/$/, ''),
     chromiumPath: env.WA_CHROMIUM_PATH || undefined,
     flushSeconds: Number(env.WA_FLUSH_SECONDS || 15),
+    heartbeatSeconds: 60,
   };
 }
 

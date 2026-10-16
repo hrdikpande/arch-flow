@@ -45,8 +45,11 @@ export async function processOutboxOnce(deps: OutboxDeps): Promise<OutboxRunSumm
         ? undefined
         : await deps.outbox.lastSentForEvent(message.recipientId, message.eventId);
 
+    // A reply to a message the person sent is allowed even right after STOP, so the STOP
+    // confirmation itself arrives. Alerts and digests stay gated on the opt-in.
+    const replyToPerson = message.kind === 'command_reply';
     const decision = decideSend({
-      recipientOptedIn: message.recipientOptedIn,
+      recipientOptedIn: message.recipientOptedIn || replyToPerson,
       eventEnabled: eventAllowed,
       connected: deps.transport.isConnected(),
       sentTodayForRecipient: sentToday,

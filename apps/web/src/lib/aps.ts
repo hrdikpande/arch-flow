@@ -100,11 +100,17 @@ export async function completeSignedUpload(token: string, bucketKey: string, obj
   return { objectId: body.objectId };
 }
 
-/** Starts translation to the web viewer format (SVF2, 2D and 3D views). */
-export async function startTranslation(token: string, urn: string, fetchImpl: Fetch = fetch): Promise<void> {
+/**
+ * Starts translation to the web viewer format (SVF2, 2D and 3D views).
+ * `force` sends x-ads-force, which deletes the existing derivatives first. Use it only to retry a
+ * failed translation: on every normal start it is expensive and unnecessary.
+ */
+export async function startTranslation(token: string, urn: string, fetchImpl: Fetch = fetch, options: { force?: boolean } = {}): Promise<void> {
+  const headers: Record<string, string> = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  if (options.force) headers['x-ads-force'] = 'true';
   const response = await fetchImpl(`${APS_BASE}/modelderivative/v2/designdata/job`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'x-ads-force': 'true' },
+    headers,
     body: JSON.stringify({ input: { urn }, output: { formats: [{ type: 'svf2', views: ['2d', '3d'] }] } }),
   });
   await json(response, 'start translation');

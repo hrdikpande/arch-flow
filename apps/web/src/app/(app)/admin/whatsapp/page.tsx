@@ -8,13 +8,29 @@ import { ALERT_EVENT_TYPES_LIST, EVENT_LABELS } from '@/lib/alert-events';
 import { formatIst } from '@/lib/format';
 import { messagingStatus } from '@/lib/messaging';
 
+/** The WhatsApp Web process writes a heartbeat every minute. Vercel cannot see the host, so this is the signal. */
+function WebProcessStatus({ heartbeat }: { heartbeat: { at?: string; connected?: boolean } | null }) {
+  const ageMs = heartbeat?.at ? Date.now() - new Date(heartbeat.at).getTime() : Infinity;
+  if (!heartbeat?.at) {
+    return <p className="text-sm"><Badge tone="error">Never reported</Badge> <span className="text-text-secondary">Start the WhatsApp Web process on the host (docs: WHATSAPP.md). Until it runs, messages wait in the outbox.</span></p>;
+  }
+  if (ageMs > 3 * 60_000) {
+    return <p className="text-sm"><Badge tone="error">Not reporting</Badge> <span className="text-text-secondary">Last report {formatIst(heartbeat.at)}. The host may be off, or the process stopped. Messages wait in the outbox.</span></p>;
+  }
+  if (!heartbeat.connected) {
+    return <p className="text-sm"><Badge tone="warning">Running, not linked</Badge> <span className="text-text-secondary">Scan the QR code shown in the host terminal with the test number (Linked devices).</span></p>;
+  }
+  return <p className="text-sm"><Badge tone="success">Linked and sending</Badge> <span className="text-text-secondary">Last report {formatIst(heartbeat.at)}. Use only the dedicated test number, and only with the owner and allowlisted people.</span></p>;
+}
+
 export default async function WhatsAppPage() {
   const access = await requireInternal();
   if (!access.isAdmin) notFound();
   const db = adminDb();
-  const [{ data: recipients }, { data: toggles }] = await Promise.all([
+  const [{ data: recipients }, { data: toggles }, { data: heartbeat }] = await Promise.all([
     db.from('whatsapp_recipients').select('id, phone_e164, opted_in, opt_in_confirmed_at, opted_out_at, active, profiles(full_name)').order('created_at'),
     db.from('whatsapp_event_settings').select('event_type, enabled'),
+    db.from('settings').select('value').is('project_id', null).eq('key', 'runtime.heartbeat').maybeSingle(),
   ]);
   const status = messagingStatus();
   const enabled = new Set((toggles ?? []).filter((t) => t.enabled).map((t) => t.event_type));
@@ -25,9 +41,7 @@ export default async function WhatsAppPage() {
 
       <Card>
         <h2 className="mb-2 text-lg font-semibold">Sending</h2>
-        {status.mode === 'web' && (
-          <p className="text-sm"><Badge tone="success">WhatsApp Web (pilot)</Badge> <span className="text-text-secondary">The WhatsApp Web process sends from the outbox. Use only the dedicated test number, and only to the owner and allowlisted people.</span></p>
-        )}
+        {status.mode === 'web' && <WebProcessStatus heartbeat={heartbeat?.value as { at?: string; connected?: boolean } | null} />}
         {status.mode === 'cloud' && (status.whatsappCloud ? (
           <p className="text-sm"><Badge tone="success">Cloud API configured</Badge> <span className="text-text-secondary">Use for client-facing messages. Outside the 24-hour window only the approved template is sent.</span></p>
         ) : (

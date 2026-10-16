@@ -14,7 +14,7 @@ async function fileForUser(fileId: string) {
   const access = await requireInternal();
   const { data: file } = await adminDb()
     .from('files')
-    .select('id, project_id, original_name, format, size_bytes, aps_status, storage_path, projects(code)')
+    .select('id, project_id, original_name, format, size_bytes, aps_status, aps_urn, translation_attempts, storage_path, projects(code)')
     .eq('id', fileId)
     .maybeSingle();
   if (!file) throw new Error('File not found.');
@@ -61,7 +61,7 @@ export async function completeApsUpload(fileId: string, uploadKey: string): Prom
     const { objectId } = await completeSignedUpload(access_token, config.bucketKey, objectKey, uploadKey);
     const urn = encodeUrn(config.bucketKey, objectKey);
     await startTranslation(access_token, urn);
-    await adminDb().from('files').update({ aps_object_id: objectId, aps_urn: urn, aps_status: 'translating', aps_error: null, aps_checked_at: new Date().toISOString() }).eq('id', file.id);
+    await adminDb().from('files').update({ aps_object_id: objectId, aps_urn: urn, aps_status: 'translating', aps_error: null, translation_attempts: 1, aps_checked_at: new Date().toISOString() }).eq('id', file.id);
     await writeAudit({ actorId: access.userId, action: 'file.translation_started', entityType: 'file', entityId: file.id, projectId: file.project_id });
     revalidatePath(`/projects/${projectCode}`);
   } catch (error) {
@@ -89,4 +89,23 @@ export async function refreshTranslation(_prev: FormState, form: FormData): Prom
     return errorState(error);
   }
   return { ok: 'Status updated.' };
+}
+
+/** Retry a failed translation of a file already in Autodesk storage. Three attempts in total (VIEW-03). */
+export async function retryTranslation(_prev: FormState, form: FormData): Promise<FormState> {
+  const fileId = String(form.get('fileId') ?? '');
+  try {
+    const { access, file, projectCode } = await fileForUser(fileId);
+    if (file.aps_status !== 'failed' || !file.aps_urn) throw new Error('Only a failed translation can be retried.');
+    if ((file.translation_attempts ?? 0) >= 3) throw new Error('Three attempts used. Ask the firm to check the source file, then upload a corrected file.');
+    const config = configOrThrow();
+    const { access_token } = await getApsToken(config, SCOPES_WRITE);
+    await startTranslation(access_token, file.aps_urn, fetch, { force: true });
+    await adminDb().from('files').update({ aps_status: 'translating', aps_error: null, translation_attempts: (file.translation_attempts ?? 0) + 1, aps_checked_at: new Date().toISOString() }).eq('id', file.id);
+    await writeAudit({ actorId: access.userId, action: 'file.translation_retried', entityType: 'file', entityId: file.id, projectId: file.project_id });
+    revalidatePath(`/projects/${projectCode}`);
+  } catch (error) {
+    return errorState(error);
+  }
+  return { ok: 'Translation restarted.' };
 }

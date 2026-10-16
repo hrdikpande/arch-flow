@@ -5,8 +5,8 @@
   "description": "WhatsApp Web session process for the pilot (dedicated test number, owner-only commands)",
   "main": "src/WhatsAppWeb.js",
   "scripts": {
-    "start": "node src/WhatsAppWeb.js",
-    "test": "node --test test/crypto.test.js"
+    "start": "node --env-file-if-exists=.env src/WhatsAppWeb.js",
+    "test": "node --test test/crypto.test.js test/wiring.test.js"
   },
   "engines": {
     "node": ">=22.19"

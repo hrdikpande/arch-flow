@@ -6,7 +6,7 @@
 | Projects and settings | PRJ, SET | Built | SLA defaults and overrides; capacity per person (workload page). |
 | Register and import | REG, IMP | Built | Template import with a review step before anything is written. Revision-history sheet imported with the newest-issued rule. |
 | Lifecycle and revisions | LIFE, REV | Built | Guards as in LIFE-02 to LIFE-08. Database blocks edits to issued revisions. |
-| Files and viewing | FIL, VIEW | Built, not live-tested | PDF viewer. CAD viewer via APS. Translation status and retry. APS endpoints need live verification. |
+| Files and viewing | FIL, VIEW | Built. Signed-in pages verified against real data. APS not verified live. | PDF and CAD in one viewer component. Translation status and retry (three attempts). Autodesk calls are not verified live. |
 | Review comments | RVW | Built | Add and resolve on the sheet page. |
 | Approvals | APR | Built | Request, approve, reject, escalation on the daily pass. |
 | Clashes | CLS | Built | Import with source-reference duplicate check. Format awaits a sample export. |
@@ -17,9 +17,9 @@
 | Transmittals | TRN | Built | Issued revisions only. Mark as sent. Email is not sent by the system. |
 | Workload | WKL | Built | Admin view with capacity. |
 | Dashboards and reports | DSH, REG-07, CHG-03 | Built | PDF and Excel exports from `/api/reports/[report]`. |
-| Client portal | CLI, CFL | Built, not live-tested | Conflict threads and issued drawing views. RLS tests cover client isolation. |
+| Client portal | CLI, CFL | Built. Verified signed in as a client against real data. | Issued drawings (PDF, and CAD when the NDA flag allows), download when allowed, conflicts. Clients are redirected away from internal pages. |
 | Notifications | NTF | Built | In-app notifications. |
-| WhatsApp alerts | WA | Built: pilot via WhatsApp Web process, production via Cloud API | Pilot needs a QR scan on the test number and an always-on host. Cloud API needs Meta credentials and an approved template. Owner commands are allowlisted. |
+| WhatsApp alerts | WA | Built. Pilot: WhatsApp Web host. Production: Cloud API. | Pilot verified up to the network step: the WhatsApp Web session wiring and the outbox run against a real database, with a fake client. The QR scan itself is not verified. See WHATSAPP.md. |
 | Digest | DIG | Built | Deterministic text always works. Gemini wording needs a key. |
 | Critical rules | RUL | Built | Draft rules until the owner edits them. |
 

@@ -16,3 +16,6 @@ test-results/
 apps/web/test-results/
 apps/web/playwright-report/
 *.tsbuildinfo
+
+# Screenshots saved by the signed-in tests
+apps/web/artifacts/

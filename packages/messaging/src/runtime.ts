@@ -46,6 +46,8 @@ export interface Runtime {
   handleWebhook(rawBody: string): Promise<{ messages: number; statuses: number }>;
   /** Handles one inbound message from any transport (owner commands, STOP and START). */
   handleInboundMessage(message: { fromPhone: string; body: string; messageId: string }): Promise<void>;
+  /** Records that the sending process is alive and whether its WhatsApp session is linked. */
+  heartbeat(connected: boolean, version: string): Promise<void>;
 }
 
 const NO_TRANSPORT: Transport = {
@@ -95,7 +97,6 @@ export function createRuntime(db: SupabaseClient, config: RuntimeConfig, clock: 
     async handleWebhook(rawBody: string) {
       const parsed = parseWebhook(rawBody);
       for (const message of parsed.messages) {
-        await adapter.recordInbound(message);
         await handleInbound({ inbound: adapter, clock }, message);
       }
       for (const status of parsed.statuses) {
@@ -104,8 +105,8 @@ export function createRuntime(db: SupabaseClient, config: RuntimeConfig, clock: 
       return { messages: parsed.messages.length, statuses: parsed.statuses.length };
     },
     async handleInboundMessage(message) {
-      await adapter.recordInbound(message);
       await handleInbound({ inbound: adapter, clock }, message);
     },
+    heartbeat: (connected, version) => adapter.heartbeat(connected, version),
   };
 }

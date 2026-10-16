@@ -4,7 +4,7 @@ import { requireInternal, projectByCode, canSee } from '@/lib/access';
 import { adminDb } from '@/lib/supabase/admin';
 import { AutodeskViewer } from '@/components/viewer/AutodeskViewer';
 import { Badge, PageHeader, Alert } from '@/components/ds';
-import { refreshTranslation } from '@/app/actions/aps';
+import { refreshTranslation, retryTranslation } from '@/app/actions/aps';
 import { ActionForm } from '@/components/ActionForm';
 import { CAD_FORMATS } from '@/lib/aps';
 
@@ -25,7 +25,7 @@ export default async function FileViewPage({ params }: { params: Promise<{ code:
   if (!project || !canSee(access, project.id)) notFound();
   const { data: file } = await adminDb()
     .from('files')
-    .select('id, original_name, format, storage_path, aps_status, aps_error, aps_checked_at, project_id')
+    .select('id, original_name, format, storage_path, aps_status, aps_error, aps_checked_at, aps_urn, translation_attempts, project_id')
     .eq('id', fileId)
     .eq('project_id', project.id)
     .maybeSingle();
@@ -53,6 +53,11 @@ export default async function FileViewPage({ params }: { params: Promise<{ code:
             {file.aps_checked_at && <span className="text-xs text-text-muted">Checked {formatCheckTime(file.aps_checked_at)}</span>}
             {['translating', 'uploading'].includes(status) && (
               <ActionForm action={refreshTranslation} submitLabel="Check translation" variant="secondary">
+                <input type="hidden" name="fileId" value={file.id} />
+              </ActionForm>
+            )}
+            {status === 'failed' && file.aps_urn && (file.translation_attempts ?? 0) < 3 && (
+              <ActionForm action={retryTranslation} submitLabel={`Retry translation (attempt ${(file.translation_attempts ?? 0) + 1} of 3)`} variant="secondary">
                 <input type="hidden" name="fileId" value={file.id} />
               </ActionForm>
             )}

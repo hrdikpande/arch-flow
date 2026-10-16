@@ -53,7 +53,7 @@ export function AutodeskViewer({ fileId, label }: { fileId: string; label: strin
         const first = await fetchToken();
         await new Promise<void>((resolve) =>
           Autodesk.Viewing.Initializer(
-            { env: 'AutodeskProduction2', api: 'streamingV2', getAccessToken: async (callback: (t: string, e: number) => void) => { const t = await fetchToken(); callback(t.access_token as string, t.expires_in as number); } },
+            { env: 'AutodeskProduction2', api: process.env.NEXT_PUBLIC_APS_VIEWER_API || 'streamingV2', getAccessToken: async (callback: (t: string, e: number) => void) => { const t = await fetchToken(); callback(t.access_token as string, t.expires_in as number); } },
             () => resolve(),
           ),
         );

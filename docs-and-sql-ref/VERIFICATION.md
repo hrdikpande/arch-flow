@@ -231,3 +231,81 @@ These are known gaps that will be closed when the open items are answered. They 
 - Client users may view PDF and CAD in the portal. CAD viewing needs the organisation's NDA flag (`allow_aps_processing`). Download needs `allow_native_download`.
 - Working days Monday to Friday, no holiday list yet.
 - Clash files use the same viewer as drawings. The clash export format is still undecided.
+
+---
+
+## 9. Run log: WhatsApp, Vercel hosting and the local stack (16 Oct 2026)
+
+Environment: this sandbox. Egress policy refused `web.whatsapp.com`, `graph.facebook.com`,
+`developer.api.autodesk.com`, `cdn.jsdelivr.net`, `api.supabase.com` and `vercel.com`. Nothing below
+claims a result for those hosts.
+
+### 9.1 Verified (automated, on a real PostgreSQL 16 database)
+
+| Check | Result |
+|---|---|
+| Typecheck, all workspaces | 0 errors |
+| Domain unit tests | 67 passed |
+| Messaging unit tests | 35 passed (the 7 integration tests run in the API harness) |
+| Web unit tests | 13 passed (adds the `x-ads-force` and translation-request tests) |
+| WhatsApp Web helpers (`node --test`): encryption, tamper and wrong-key rejection, session store round trip | 5 passed |
+| RLS suite, migrations 000000 to 000400 | PASSED |
+| Production build | passed |
+| Playwright smoke, public pages and API routes | 11 passed |
+| **API harness** (`supabase/tests/api/run.sh`): migrations, PostgREST 12.2.3, Supabase gateway stub, seeds | **all passed** |
+| ↳ messaging pipeline against PostgREST: fan-out, send, inbound command, stranger rejected, STOP and START, queue-only mode, encrypted session store, anon role denied | 7 of 7 |
+| ↳ WhatsApp Web wiring with a fake client: QR printed, `ready` writes heartbeat, group and self messages ignored, allowlisted command answered, stranger logged and not answered, alert sent, disconnect exits non-zero | 8 subtests passed |
+| ↳ signed-in browser tests (owner and client) | 9 of 9 |
+| Cron route `/api/cron/tick` in the production build, 3 calls one minute apart, with the secret | 200 each time. A call without the secret is 401. |
+| Digest at the configured time: three cron runs | exactly one digest created and queued |
+
+Signed-in screenshots (apps/web/artifacts/signed-in/, not committed):
+`owner-dashboard.png`, `owner-sheet.png`, `owner-clash.png` (the clash page embeds the issued PDF in the
+viewer), `client-portal.png`, `client-pdf.png`.
+
+Caveat on `owner-clash.png`: the test checks that the PDF document loads (the viewer reports page 1 of 1). The
+main canvas in that capture was still rendering, so the screenshot is not a check of the drawing's pixels.
+
+### 9.2 Real service attempted, and what happened
+
+- **WhatsApp Web login.** `apps/whatsapp-web/src/WhatsAppWeb.js` was started with the real
+  `whatsapp-web.js` and a real Chromium. The browser could not load `https://web.whatsapp.com/`
+  (`net::ERR_TUNNEL_CONNECTION_FAILED`, the egress policy refused the host). The process logged the error
+  and exited with code 1. **The QR code was not reached**, so the login is not verified.
+
+### 9.3 Defects found and fixed in this round
+
+1. Each inbound message was logged twice (`recordInbound` plus `logInbound`). Fixed: one log path.
+2. The STOP confirmation was cancelled, because the opt-in check also applied to replies. Fixed: replies to
+   the person are allowed, alerts and digests stay gated. Caught by the integration test.
+3. `x-ads-force` was sent on every translation start, which deletes existing derivatives. Fixed: sent only on
+   a retry. Caught against Autodesk's published reference.
+4. A failed translation had no retry. Added: up to three attempts, counted in `files.translation_attempts`.
+5. The admin WhatsApp page could not show whether the host runs. Fixed: the host writes a heartbeat every
+   60 seconds, and the page shows Linked and sending, Running not linked, Not reporting, or Never reported.
+6. The host did not read `.env`. Fixed: `node --env-file-if-exists`.
+7. The integration test file used `import.meta`, which the TypeScript setting rejects. Fixed.
+8. The default Playwright config picked up the signed-in tests, which need the harness. Excluded.
+9. The signed-in harness started a stale server on port 3500 and tested the wrong build. The harness now
+   refuses to start when its ports are taken.
+
+### 9.4 Not verified, and what would verify it
+
+| Item | Why it is not verified | What is needed |
+|---|---|---|
+| QR code scan, linked session, real send and receive on WhatsApp | `web.whatsapp.com` refused by the egress policy | Allow `web.whatsapp.com` for the host (or run the host on a machine with access), then one QR scan on the test number |
+| Cloud API (client-facing) sends and the Meta webhook | `graph.facebook.com` refused; no Meta app | Meta app, approved template, and access to `graph.facebook.com` |
+| Autodesk translation, manifest, viewer | `developer.api.autodesk.com` refused | APS credentials in `.env` and access to the host. Viewer path `viewers/7.*` not loaded in a browser. EMEA data needs `NEXT_PUBLIC_APS_VIEWER_API=streamingV2_EU`, not tested. |
+| Vercel deployment and the per-minute cron on Pro | `vercel.com` refused. The cron route is verified locally only | Deploy, then check the Cron Jobs tab after the first minute |
+| Real Supabase Auth, Storage and the project's RLS with real users | No project link yet. The local stack replaces Auth and Storage with a stub gateway; PostgREST is the real REST layer | Project URL and keys in `.env`; run the migrations on that project |
+| GitHub Actions job `api-integration` | Written, not run on GitHub | First run on GitHub after push |
+
+The viewer script path, the Autodesk endpoints and the cookie format were checked against the published
+documentation (Autodesk pages found by web search) and the `@supabase/ssr` source. They were not run live.
+
+### 9.5 Open decisions and items (unchanged)
+
+- Gemini: which data may leave the firm. Keep to counts and sheet numbers until decided.
+- Written acceptance of the WhatsApp Web ban risk for the pilot.
+- Holiday list: Monday to Friday until given.
+- Clash export format: still undecided. Send a sample CSV or XLSX.

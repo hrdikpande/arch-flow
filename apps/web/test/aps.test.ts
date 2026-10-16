@@ -67,6 +67,18 @@ describe('APS requests', () => {
     expect(JSON.parse(body)).toEqual({ input: { urn: 'dXJu' }, output: { formats: [{ type: 'svf2', views: ['2d', '3d'] }] } });
   });
 
+  it('does not send x-ads-force on a normal start (it deletes existing derivatives)', async () => {
+    let headers: Record<string, string> = {};
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      headers = init.headers as Record<string, string>;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+    await startTranslation('t', 'dXJu', fetchImpl);
+    expect(headers['x-ads-force']).toBeUndefined();
+    await startTranslation('t', 'dXJu', fetchImpl, { force: true });
+    expect(headers['x-ads-force']).toBe('true');
+  });
+
   it('maps the manifest to translating, success or failed', async () => {
     const respond = (payload: unknown) => (async () => new Response(JSON.stringify(payload), { status: 200 })) as typeof fetch;
     expect((await translationStatus('t', 'u', respond({ status: 'inprogress', progress: '40% complete' }))).state).toBe('translating');
