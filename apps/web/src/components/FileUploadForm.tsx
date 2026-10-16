@@ -2,6 +2,8 @@
 
 import { useRef, useState } from 'react';
 import { prepareUpload, recordUpload } from '@/app/actions/sheets';
+import { completeApsUpload, startApsUpload } from '@/app/actions/aps';
+import { uploadParts } from '@/lib/aps-upload';
 import { Alert, Button, inputClass } from './ds';
 
 async function sha256Hex(file: File): Promise<string> {
@@ -10,8 +12,8 @@ async function sha256Hex(file: File): Promise<string> {
 }
 
 /**
- * Upload in two steps: a one-time URL from the server, then the file goes straight
- * to storage (large CAD files never pass through a function). The file is recorded after.
+ * Upload in steps. The file goes straight to storage (large CAD files never pass through a function).
+ * CAD files are then sent to Autodesk the same way, and translation starts.
  */
 export function FileUploadForm({ projectCode, sheetNumber }: { projectCode: string; sheetNumber: string }) {
   const input = useRef<HTMLInputElement>(null);
@@ -32,7 +34,25 @@ export function FileUploadForm({ projectCode, sheetNumber }: { projectCode: stri
       const sha256 = await sha256Hex(file);
       const recorded = await recordUpload({ projectCode, sheetNumber, path: prepared.path, fileName: file.name, sizeBytes: file.size, sha256 });
       if ('error' in recorded) throw new Error(recorded.error);
-      setMessage(recorded.nameWarning ? { tone: 'warning', text: `Stored. ${recorded.nameWarning}` } : { tone: 'success', text: 'File stored.' });
+      let text = recorded.nameWarning ? `Stored. ${recorded.nameWarning}` : 'File stored.';
+      let tone: 'success' | 'warning' = recorded.nameWarning ? 'warning' : 'success';
+      if (recorded.needsAutodesk) {
+        const plan = await startApsUpload(recorded.fileId);
+        if ('error' in plan) {
+          text += ` Autodesk: ${plan.error}`;
+          tone = 'warning';
+        } else {
+          await uploadParts(file, plan.urls);
+          const done = await completeApsUpload(recorded.fileId, plan.uploadKey);
+          if (done?.error) {
+            text += ` Autodesk: ${done.error}`;
+            tone = 'warning';
+          } else {
+            text += ' Sent to Autodesk; viewing will be ready after translation.';
+          }
+        }
+      }
+      setMessage({ tone, text });
       if (input.current) input.current.value = '';
     } catch (error) {
       setMessage({ tone: 'error', text: error instanceof Error ? error.message : 'Upload failed.' });

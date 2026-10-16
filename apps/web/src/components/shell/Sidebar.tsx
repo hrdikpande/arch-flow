@@ -7,6 +7,7 @@ const NAV: { href: string; label: string; adminOnly?: boolean }[] = [
   { href: '/projects', label: 'Projects' },
   { href: '/approvals', label: 'Approvals' },
   { href: '/conflicts', label: 'Conflicts' },
+  { href: '/workload', label: 'Workload', adminOnly: true },
   { href: '/admin', label: 'Admin', adminOnly: true },
   { href: '/admin/users', label: 'Users', adminOnly: true },
   { href: '/admin/whatsapp', label: 'WhatsApp', adminOnly: true },

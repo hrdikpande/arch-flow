@@ -6,32 +6,31 @@ import { ActionForm } from '@/components/ActionForm';
 import { Badge, Button, Card, FormField, PageHeader, Table, td, th, inputClass } from '@/components/ds';
 import { ALERT_EVENT_TYPES_LIST, EVENT_LABELS } from '@/lib/alert-events';
 import { formatIst } from '@/lib/format';
+import { messagingStatus } from '@/lib/messaging';
 
 export default async function WhatsAppPage() {
   const access = await requireInternal();
   if (!access.isAdmin) notFound();
   const db = adminDb();
-  const [{ data: recipients }, { data: toggles }, { data: heartbeat }] = await Promise.all([
+  const [{ data: recipients }, { data: toggles }] = await Promise.all([
     db.from('whatsapp_recipients').select('id, phone_e164, opted_in, opt_in_confirmed_at, opted_out_at, active, profiles(full_name)').order('created_at'),
     db.from('whatsapp_event_settings').select('event_type, enabled'),
-    db.from('settings').select('value').is('project_id', null).eq('key', 'worker.heartbeat').maybeSingle(),
   ]);
+  const status = messagingStatus();
   const enabled = new Set((toggles ?? []).filter((t) => t.enabled).map((t) => t.event_type));
-  const hb = heartbeat?.value as { at?: string; connected?: boolean } | undefined;
-  const stale = !hb?.at || Date.now() - new Date(hb.at).getTime() > 3 * 60_000;
 
   return (
     <div className="flex flex-col gap-8">
       <PageHeader eyebrow="Owner" title="WhatsApp" description="The owner and up to four internal people receive alerts on the test number. Clients never receive WhatsApp." />
 
       <Card>
-        <h2 className="mb-2 text-lg font-semibold">Worker status</h2>
-        {stale ? <Badge tone="error">Worker not reporting. Check the worker host.</Badge> : (
-          <p className="text-sm">
-            <Badge tone={hb?.connected ? 'success' : 'warning'}>{hb?.connected ? 'WhatsApp connected' : 'WhatsApp not connected'}</Badge>{' '}
-            <span className="text-text-secondary">Last report {formatIst(hb?.at ?? null)}</span>
-          </p>
+        <h2 className="mb-2 text-lg font-semibold">WhatsApp Cloud API</h2>
+        {status.whatsappCloud ? (
+          <p className="text-sm"><Badge tone="success">Configured</Badge> <span className="text-text-secondary">Messages go through the Meta Cloud API. Inbound replies arrive at the webhook. Secrets are read from the server environment and never shown here.</span></p>
+        ) : (
+          <p className="text-sm"><Badge tone="warning">Not configured</Badge> <span className="text-text-secondary">Missing environment variables: {status.missing.join(', ')}.</span></p>
         )}
+        <p className="mt-2 text-xs text-text-muted">Messages sent outside the 24-hour customer window use the approved template. Gemini digest text: {status.gemini ? 'configured' : 'not configured (deterministic text is used)'}.</p>
       </Card>
 
       <section className="flex flex-col gap-4">

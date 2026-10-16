@@ -1,3 +1,5 @@
+> **Deployment update, 16 Oct 2026.** The always-on worker and whatsapp-web.js described below are superseded. Current design: Vercel routes (`/api/whatsapp/webhook`, `/api/cron/tick`, `/api/health`) run the messaging package. Outbound sends are flushed with `after()` after events and webhooks, and the daily cron catches up. The WhatsApp Cloud API replaces the QR-linked session. Read the worker sections as "messaging runtime". See TECH-STACK.md and VERIFICATION.md section 7.
+
 # Architecture — Drawing Control & Alerts
 
 **Status:** Draft for approval

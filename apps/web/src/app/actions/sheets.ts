@@ -9,6 +9,7 @@ import { recordEvent, usersForProject, notifyUsers } from '@/lib/events';
 import { formatIst, istToday } from '@/lib/format';
 import { loadSheet, revisionsOf, rolesFor, transitionContext, dueFromToday } from '@/lib/workflow';
 import { errorState, type FormState } from './types';
+import { apsConfig, CAD_FORMATS } from '@/lib/aps';
 
 const CREATE_ROLES = ['project_head', 'discipline_lead', 'drafter'] as const;
 const STATE_ROLES = ['project_head', 'discipline_lead', 'drafter', 'checker'] as const;
@@ -153,6 +154,7 @@ export async function issueSheet(_prev: FormState, form: FormData): Promise<Form
     if (itemError) throw new Error(itemError.message);
 
     await db.from('status_history').insert({ entity_type: 'sheet', entity_id: sheet.id, from_state: sheet.status, to_state: purpose, actor_id: access.userId, note: `${wip.rev_code} issued` });
+    await db.from('change_requests').update({ status: 'implemented' }).eq('sheet_id', sheet.id).eq('status', 'approved');
     await writeAudit({ actorId: access.userId, action: 'revision.issued', entityType: 'revision', entityId: wip.id, projectId: project.id, after: { sheet: sheetNumber, rev: wip.rev_code, purpose, transmittal: number } });
     await recordEvent({
       type: 'revision.issued',
@@ -189,6 +191,12 @@ export async function requestChange(_prev: FormState, form: FormData): Promise<F
     const sheetNumber = text(form, 'sheetNumber');
     const reason = text(form, 'reason');
     if (!reason) throw new Error('Say what needs to change and why.');
+    const costRaw = text(form, 'costImpact');
+    const daysRaw = text(form, 'timeImpactDays');
+    const costImpact = costRaw === '' ? null : Number(costRaw);
+    const timeImpactDays = daysRaw === '' ? null : Number(daysRaw);
+    if (costImpact !== null && (!Number.isFinite(costImpact) || costImpact < 0)) throw new Error('Cost impact must be a positive amount.');
+    if (timeImpactDays !== null && (!Number.isInteger(timeImpactDays) || timeImpactDays < 0)) throw new Error('Time impact must be whole working days.');
     const project = await projectByCode(projectCode);
     if (!project) throw new Error('Project not found.');
     assertProjectRole(access, project.id, CREATE_ROLES);
@@ -218,6 +226,19 @@ export async function requestChange(_prev: FormState, form: FormData): Promise<F
       .select('id')
       .single();
     if (error) throw new Error(error.message);
+    const { error: changeError } = await db.from('change_requests').insert({
+      project_id: project.id,
+      sheet_id: sheet.id,
+      revision_id: current?.id ?? null,
+      reason,
+      cost_impact: costImpact,
+      time_impact_days: timeImpactDays,
+      status: 'requested',
+      requested_by: access.userId,
+      approval_id: approval.id,
+      sheet_status_at_request: sheet.status,
+    });
+    if (changeError) throw new Error(changeError.message);
     const { data: assigneeProfile } = await db.from('profiles').select('full_name').eq('id', assignee).maybeSingle();
     await recordEvent({
       type: 'approval.requested',
@@ -268,7 +289,7 @@ export async function prepareUpload(input: { projectCode: string; sheetNumber: s
 }
 
 /** Step 2: records the stored file, checks the name and raises the upload event (FIL-03, FIL-04, FIL-08). */
-export async function recordUpload(input: { projectCode: string; sheetNumber: string; path: string; fileName: string; sizeBytes: number; sha256: string }): Promise<{ ok: string; nameWarning: string | null } | { error: string }> {
+export async function recordUpload(input: { projectCode: string; sheetNumber: string; path: string; fileName: string; sizeBytes: number; sha256: string }): Promise<{ ok: string; nameWarning: string | null; fileId: string; needsAutodesk: boolean } | { error: string }> {
   try {
     const access = await requireInternal();
     const project = await projectByCode(input.projectCode);
@@ -313,6 +334,8 @@ export async function recordUpload(input: { projectCode: string; sheetNumber: st
     return {
       ok: 'File stored.',
       nameWarning: check.matches ? null : `The name does not follow the standard. Suggested name: ${buildFileName(parts)}`,
+      fileId: file.id,
+      needsAutodesk: (CAD_FORMATS as readonly string[]).includes(ext) && apsConfig() !== null,
     };
   } catch (error) {
     return { error: error instanceof Error ? error.message : 'Could not record the file.' };

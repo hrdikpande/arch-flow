@@ -11,9 +11,9 @@
     "node": ">=22.19"
   },
   "scripts": {
-    "build": "npm run build -w @arch-flow/domain && npm run build -w @arch-flow/worker && npm run build -w @arch-flow/web",
-    "test": "npm run test -w @arch-flow/domain && npm run test -w @arch-flow/worker",
+    "build": "npm run build -w @arch-flow/domain && npm run build -w @arch-flow/messaging && npm run build -w @arch-flow/web",
+    "test": "npm run test -w @arch-flow/domain && npm run test -w @arch-flow/messaging",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "e2e": "npm run e2e -w @arch-flow/web"
   }
 }

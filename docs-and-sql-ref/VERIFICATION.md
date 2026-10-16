@@ -165,3 +165,42 @@ These are known gaps that will be closed when the open items are answered. They 
 | `VERIFICATION.md` | This file |
 | `schema_behaviour_tests.sql` | Schema behaviour checks (run on PostgreSQL 16) |
 | `drawing_register_template.xlsx` | Register import template (from earlier) |
+
+---
+
+## 7. Build verification run log (16 Oct 2026)
+
+| Check | Command | Result |
+|---|---|---|
+| Typecheck | `npm run typecheck` | Passed, no errors |
+| Domain unit tests | `npm test -w @arch-flow/domain` | 67 passed |
+| Messaging unit tests | `npm test -w @arch-flow/messaging` | 35 passed |
+| Web unit tests | `npm test -w @arch-flow/web` | 12 passed |
+| RLS suite | `supabase/tests/run_rls_tests.sh` (PostgreSQL 16) | 31 checks passed |
+| Production build | `npm run build` with placeholder env | Passed. All app and API routes compiled. |
+| Playwright smoke | `npm run e2e -w @arch-flow/web` (Chromium) | 10 passed. Screenshots saved to `apps/web/test-results/`. |
+
+### Defects found and fixed during this run
+
+- **Middleware redirected machine routes to login.** The webhook, cron and health routes returned the login page to unauthenticated callers. Meta's handshake and Vercel Cron would have failed in production. Fixed: those three routes skip the session check and authenticate themselves. Other unauthenticated `/api/*` calls now receive a 401 JSON response instead of a redirect.
+- **Register import returned a false success.** Fixed earlier: it now redirects to the review page.
+- **Workload query used a column that does not exist** (`active`). Corrected to `is_active`.
+- **Admin WhatsApp page read a worker heartbeat** that no longer exists. Replaced with Cloud API configuration status. Secret values are never shown.
+- **Vitest picked up Playwright specs.** Fixed with a dedicated `vitest.config.ts` limited to `test/`.
+
+### Not verified (needs live accounts)
+
+- Sign-in, invitations and role-based screens with real users.
+- Supabase Storage signed uploads with real files.
+- WhatsApp Cloud API sends, delivery receipts and inbound commands with a real number and approved template.
+- Gemini digest wording.
+- Autodesk token, OSS upload, translation and viewer. Endpoints and viewer version are from the documentation and have not been called.
+- NWD translation support.
+- Vercel cron execution.
+
+### Drift from the earlier plan
+
+- Worker process replaced by Vercel routes plus daily cron. Per-minute outbox retries need Vercel Pro.
+- whatsapp-web.js replaced by WhatsApp Cloud API (needs Meta approval for production templates).
+- Hostinger and Docker removed.
+- Clash import format still needs a real sample.

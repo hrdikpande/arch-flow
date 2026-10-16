@@ -15,7 +15,7 @@ export interface IssuedItem {
 export interface DigestInput {
   /** IST date of the digest, 'YYYY-MM-DD'. */
   date: string;
-  /** "Sent late" note when the worker was down at the scheduled time (DIG-01). */
+  /** "Sent late" note when the runtime was down at the scheduled time (DIG-01). */
   sentLate?: boolean;
   uploads: number;
   decisions: number;

@@ -1,9 +1,11 @@
 /**
- * Events and in-app notifications. The worker turns events into WhatsApp messages,
+ * Events and in-app notifications. The messaging runtime turns events into WhatsApp messages,
  * so every business change records an event here (ARCHITECTURE.md, 7).
  */
 
+import { after } from 'next/server';
 import { adminDb } from './supabase/admin';
+import { messagingRuntime, messagingStatus } from './messaging';
 
 export interface EventInput {
   type: string;
@@ -24,6 +26,22 @@ export async function recordEvent(input: EventInput): Promise<void> {
     payload: input.payload,
   });
   if (error) throw new Error(`Event write failed: ${error.message}`);
+  scheduleFlush();
+}
+
+/**
+ * Sends queued WhatsApp messages right after the response, so alerts do not wait for the daily cron.
+ * Skipped when WhatsApp is not configured; the cron pass still runs.
+ */
+export function scheduleFlush(): void {
+  if (!messagingStatus().whatsappCloud) return;
+  after(async () => {
+    try {
+      await messagingRuntime().flush();
+    } catch (error) {
+      console.error('flush failed', error instanceof Error ? error.message : error);
+    }
+  });
 }
 
 /** Profiles that hold a role on the project (plus the owner), excluding the actor. */

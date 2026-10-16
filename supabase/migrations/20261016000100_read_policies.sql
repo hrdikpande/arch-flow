@@ -1,5 +1,5 @@
 -- Read policies for end-user sessions (defence in depth).
--- The web app and the worker read with the service role and enforce the same
+-- The web app and the messaging routes read with the service role and enforce the same
 -- rules in code (see apps/web/src/lib/access.ts). These policies make a direct
 -- query with a user's own token return only what that user may see.
 -- Writes stay closed to end-user tokens: no insert/update/delete policies are created.

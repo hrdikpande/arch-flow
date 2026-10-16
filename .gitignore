@@ -9,3 +9,10 @@ coverage/
 .DS_Store
 .wwebjs_auth/
 .wwebjs_cache/
+
+# Playwright
+playwright-report/
+test-results/
+apps/web/test-results/
+apps/web/playwright-report/
+*.tsbuildinfo

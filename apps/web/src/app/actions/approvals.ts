@@ -56,6 +56,11 @@ export async function decideApproval(_prev: FormState, form: FormData): Promise<
       .eq('status', 'pending');
     if (updateError) throw new Error(updateError.message);
 
+    await db
+      .from('change_requests')
+      .update({ status: decision === 'approve' ? 'approved' : 'rejected' })
+      .eq('approval_id', approval.id);
+
     if (decision === 'approve' && approval.transition === 'change_live_sheet') {
       const latest = revisions[revisions.length - 1];
       const newCode = nextRevisionCode(latest?.rev_code ?? null);

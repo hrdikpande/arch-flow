@@ -17,7 +17,7 @@ jobs:
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck
-      - name: Unit tests (domain and worker)
+      - name: Unit tests (domain and messaging)
         run: npm test
       - name: Build (placeholder environment, no secrets needed)
         env:
@@ -27,3 +27,33 @@ jobs:
           APP_URL: https://arch-flow.example
           NEXT_TELEMETRY_DISABLED: "1"
         run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Build (placeholder environment)
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-service
+          APP_URL: https://arch-flow.example
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build
+      - name: Playwright smoke tests
+        env:
+          CI: "true"
+        run: npm run e2e -w @arch-flow/web
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report

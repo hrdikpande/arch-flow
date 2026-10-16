@@ -284,3 +284,25 @@ Future changes: versioned migration files under `supabase/migrations/`, each rev
 | Q-P7 | Whether dashboard charts are needed | Views and indexes |
 | O-T3 | Export archive format | `exports` columns |
 | A-N1 and A-T1 | Naming and transmittal patterns | `settings` values, `next_transmittal_number` |
+
+---
+
+## Additions, 16 Oct 2026 (migration `20261016000200_features.sql`, `20261016000300_rls_complete.sql`)
+
+| Table or change | Purpose |
+|---|---|
+| `authority_templates` | Admin template items per authority (AUT-01) |
+| `authority_checklists` | Project checklist items with responsible person, due date and status (AUT-02 to AUT-04) |
+| `user_capacity` | Sheets and hours per week per person (SET-07, WKL-01) |
+| `change_requests` | Requested changes with cost and time impact, linked to an approval (CHG-01, CHG-02) |
+| `review_comments` | Comments against a revision, resolved with a note (RVW-01, RVW-02) |
+| `submittals` | Submittal records with status and due date (SUB-01 to SUB-03) |
+| `clashes`, `clash_sheets` | Clash records and links to sheets (CLS-01, CLS-04) |
+| `register_imports.history_rows` | Count of revision-history rows in an import |
+| `files` APS columns | Translation status, job id and manifest reference for CAD files |
+| `size_at_issue` on `files` | Size recorded at issue, used by the stale-revision check (FIL-05) |
+| `whatsapp_outbox` delivery columns | Cloud API message id, delivery status, error, attempt count |
+
+Row-level security: `20261016000300_rls_complete.sql` adds read policies for every table. End users have no write policies; all writes go through server actions using the service role, which checks roles in code.
+
+Verification: `supabase/tests/run_rls_tests.sh` runs the fixture and 31 checks on PostgreSQL 16 with a stub `auth.uid()`. Passed on 16 Oct 2026. It does not test against Supabase's own Auth service.

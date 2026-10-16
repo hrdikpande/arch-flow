@@ -1,6 +1,6 @@
 /**
  * WhatsApp outbox decisions (WA-04 to WA-07, ARCHITECTURE.md 3.7 and 6).
- * Pure functions: the worker reads the data, asks these functions what to do,
+ * Pure functions: the caller reads the data, asks these functions what to do,
  * then performs the send. This keeps the rules testable without WhatsApp.
  */
 

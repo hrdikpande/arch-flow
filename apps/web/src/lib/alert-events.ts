@@ -1,4 +1,4 @@
-/** Event types an admin can switch on for WhatsApp alerts (WA-02). Mirrors the worker's list. */
+/** Event types an admin can switch on for WhatsApp alerts (WA-02). Mirrors the messaging package's list. */
 export const ALERT_EVENT_TYPES_LIST: readonly string[] = [
   'file.uploaded',
   'approval.requested',

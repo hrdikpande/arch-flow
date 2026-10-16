@@ -8,3 +8,5 @@ export * from './ai-validate';
 export * from './outbox';
 export * from './commands';
 export * from './register-import';
+export * from './clash-import';
+export * from './revision-history';

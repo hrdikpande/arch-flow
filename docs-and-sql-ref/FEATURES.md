@@ -1,3 +1,32 @@
+# Build status (16 Oct 2026)
+
+| Area | IDs | Status | Notes |
+|---|---|---|---|
+| Accounts and roles | AUTH, CLI-09 | Built | Magic link invitation, password login. Password reset and session timeout depend on Supabase Auth settings. |
+| Projects and settings | PRJ, SET | Built | SLA defaults and overrides; capacity per person (workload page). |
+| Register and import | REG, IMP | Built | Template import with a review step before anything is written. Revision-history sheet imported with the newest-issued rule. |
+| Lifecycle and revisions | LIFE, REV | Built | Guards as in LIFE-02 to LIFE-08. Database blocks edits to issued revisions. |
+| Files and viewing | FIL, VIEW | Built, not live-tested | PDF viewer. CAD viewer via APS. Translation status and retry. APS endpoints need live verification. |
+| Review comments | RVW | Built | Add and resolve on the sheet page. |
+| Approvals | APR | Built | Request, approve, reject, escalation on the daily pass. |
+| Clashes | CLS | Built | Import with source-reference duplicate check. Format awaits a sample export. |
+| RFIs | RFI | Built | Overdue check and WhatsApp notice. |
+| Submittals | SUB | Built | Create and update status; overdue flagged on the page. |
+| Changes | CHG | Built | Request with cost and time impact; approval links to the change. |
+| Authority checklists | AUT | Built | Admin template; project checklist; overdue flag. |
+| Transmittals | TRN | Built | Issued revisions only. Mark as sent. Email is not sent by the system. |
+| Workload | WKL | Built | Admin view with capacity. |
+| Dashboards and reports | DSH, REG-07, CHG-03 | Built | PDF and Excel exports from `/api/reports/[report]`. |
+| Client portal | CLI, CFL | Built, not live-tested | Conflict threads and issued drawing views. RLS tests cover client isolation. |
+| Notifications | NTF | Built | In-app notifications. |
+| WhatsApp alerts | WA | Built on Cloud API | Needs Meta credentials, a test number and an approved template. Inbound commands via webhook. |
+| Digest | DIG | Built | Deterministic text always works. Gemini wording needs a key. |
+| Critical rules | RUL | Built | Draft rules until the owner edits them. |
+
+Items marked "not live-tested" have unit or database tests but have not been run against a real Supabase project, WhatsApp number or Autodesk account.
+
+---
+
 # Feature Inventory — Drawing Control & Alerts
 
 **Version:** 2.0
