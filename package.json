@@ -1,0 +1,19 @@
+{
+  "name": "arch-flow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Drawing control and alerts for design and engineering firms (arch-flow)",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "build": "npm run build -w @arch-flow/domain && npm run build -w @arch-flow/worker && npm run build -w @arch-flow/web",
+    "test": "npm run test -w @arch-flow/domain && npm run test -w @arch-flow/worker",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
+  }
+}
