@@ -371,3 +371,17 @@ Sample copy is in FEATURES.md, Appendices A and B.
 | O-D4 | Load Inter from Google Fonts? | Yes. |
 | O-D5 | Separate template files for all components? | Yes. |
 | O-D6 | Show "In progress" instead of "WIP"? | Yes, after owner confirms. |
+
+---
+
+## 17. Changes since the first design (16 Oct 2026)
+
+- **One drawing viewer for every role.** `components/viewer/DrawingView.tsx` renders PDF in the browser and CAD in the Autodesk viewer. Used on the internal file page, the client portal file page, and the clash detail page. Who may view is decided in `lib/drawing-view.ts`, not in the component.
+- **Clash detail page** (`/projects/[code]/issues/[id]`): the clash, its description, and one card per linked sheet with its drawing.
+- **Client portal drawings:** each issued sheet has a View link, plus Download only when the organisation allows it. Sheets still in work are not listed.
+- **Translation states** shown as badges: Not sent to Autodesk, Uploading, Translating, Ready to view, Translation failed. A failed translation shows a Retry button while attempts remain (three in total).
+- **WhatsApp host status** on the admin WhatsApp page, from the host heartbeat: Linked and sending (success), Running, not linked (warning), Not reporting (error), Never reported (error). The page gives the next step in each case.
+- **Workload** (admin): capacity inputs per person, percentage badge (success, warning above 80%, error above 100%).
+- **No new design tokens** were needed. Existing components (`Card`, `Badge`, `Alert`, `Table`, `EmptyState`) cover the additions.
+- **Accessibility:** new tables have captions; new icon-less controls have text labels or `aria-label`.
+

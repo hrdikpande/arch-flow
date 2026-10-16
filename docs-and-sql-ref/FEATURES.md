@@ -1,29 +1,66 @@
-# Build status (16 Oct 2026)
+# Build status (updated 16 Oct 2026)
 
-| Area | IDs | Status | Notes |
+Every row is checked against the code and the tests. "Built" means the screen or job exists and has tests. It does not mean the pilot has used it.
+Verification detail: VERIFICATION.md sections 7 to 10.
+
+| Section | IDs | Status | Notes |
 |---|---|---|---|
-| Accounts and roles | AUTH, CLI-09 | Built | Magic link invitation, password login. Password reset and session timeout depend on Supabase Auth settings. |
-| Projects and settings | PRJ, SET | Built | SLA defaults and overrides; capacity per person (workload page). |
-| Register and import | REG, IMP | Built | Template import with a review step before anything is written. Revision-history sheet imported with the newest-issued rule. |
-| Lifecycle and revisions | LIFE, REV | Built | Guards as in LIFE-02 to LIFE-08. Database blocks edits to issued revisions. |
-| Files and viewing | FIL, VIEW | Built. Signed-in pages verified against real data. APS not verified live. | PDF and CAD in one viewer component. Translation status and retry (three attempts). Autodesk calls are not verified live. |
-| Review comments | RVW | Built | Add and resolve on the sheet page. |
-| Approvals | APR | Built | Request, approve, reject, escalation on the daily pass. |
-| Clashes | CLS | Built | Import with source-reference duplicate check. Format awaits a sample export. |
-| RFIs | RFI | Built | Overdue check and WhatsApp notice. |
-| Submittals | SUB | Built | Create and update status; overdue flagged on the page. |
-| Changes | CHG | Built | Request with cost and time impact; approval links to the change. |
-| Authority checklists | AUT | Built | Admin template; project checklist; overdue flag. |
-| Transmittals | TRN | Built | Issued revisions only. Mark as sent. Email is not sent by the system. |
-| Workload | WKL | Built | Admin view with capacity. |
-| Dashboards and reports | DSH, REG-07, CHG-03 | Built | PDF and Excel exports from `/api/reports/[report]`. |
-| Client portal | CLI, CFL | Built. Verified signed in as a client against real data. | Issued drawings (PDF, and CAD when the NDA flag allows), download when allowed, conflicts. Clients are redirected away from internal pages. |
-| Notifications | NTF | Built | In-app notifications. |
-| WhatsApp alerts | WA | Built. Pilot: WhatsApp Web host. Production: Cloud API. | Pilot verified up to the network step: the WhatsApp Web session wiring and the outbox run against a real database, with a fake client. The QR scan itself is not verified. See WHATSAPP.md. |
-| Digest | DIG | Built | Deterministic text always works. Gemini wording needs a key. |
-| Critical rules | RUL | Built | Draft rules until the owner edits them. |
+| 3.1 Accounts | AUTH, CLI-09 | Built | Invitations, password login, reset. Session length depends on Supabase Auth settings (not yet set). |
+| 3.2 Projects | PRJ | Built | Create, edit, assign people. Close and status: partly (status field exists; close flow not built). |
+| 3.3 Settings and SLAs | SET | Built | Defaults and overrides, naming and transmittal patterns, daily cap, digest time, escalation days, capacity, working days (Mon to Fri). |
+| 3.4 Register | REG | Built | List, create, edit, sheet page, Excel and PDF export. Duplicate sheet (REG-06) not built (P2). |
+| 3.5 Register import | IMP | Built | Template import with a review step. Revision-history sheet supported. |
+| 3.6 Lifecycle | LIFE | Built | Guards LIFE-02 to LIFE-08 enforced in the domain and the actions. |
+| 3.7 Revisions | REV | Built | Database blocks edits to issued revisions. Supersession in the same transaction. |
+| 3.8 Files and naming | FIL | Built | Upload to signed storage links, naming check, checksum, stale-revision check. |
+| 3.9 Viewing | VIEW | Built. Signed-in view verified on local stack. Autodesk not verified live. | PDF in the browser. CAD in the Autodesk viewer with status and retry (three attempts). Clients see CAD when their NDA flag allows. |
+| 3.10 Review comments | RVW | Built | Add and resolve on the sheet page. Comment count on cards: not built (RVW-03). |
+| 3.11 Approvals | APR | Built | Request, approve, reject, escalation on the daily pass, approval history, "My approvals" count. |
+| 3.12 Clashes | CLS | Built | Create, resolve, import with review, critical flag from rules, clash detail page with the linked drawings. Export format pending a sample. |
+| 3.13 RFIs | RFI | Built | Create, respond, close, overdue check with WhatsApp notice. |
+| 3.14 Submittals | SUB | Built | Create, status updates, overdue flag on page and in digest. |
+| 3.15 Changes | CHG | Built | Request with cost and time impact, approval link, change report (Excel with totals). |
+| 3.16 Authority checklists | AUT | Built | Admin template, project checklist, tick with person and date, overdue flag. |
+| 3.17 Transmittals | TRN | Built | Issued revisions only, sent-date record. The system does not email transmittals. |
+| 3.18 Workload | WKL | Built | Admin view with capacity. Over-capacity flag in digest: not built. |
+| 3.19 Dashboards | DSH | Built | Owner and project dashboards. Charts (DSH-05) not built (P2). Pilot measures panel built. |
+| 3.20 Client portal | CLI | Built. Verified signed in as a client against real data. | Issued drawings, PDF and CAD viewing, download when allowed, transmittals, conflicts. Clients redirected from internal pages. |
+| 3.21 Conflicts | CFL | Built | Raise, thread, 3-working-day window, overdue notice, close with final reply. |
+| 3.22 Notifications | NTF | Built | In-app bell and read marks. Email fallback only for health alerts (not yet built). |
+| 3.23 WhatsApp | WA | Built. Pilot: WhatsApp Web host. Production: Cloud API. | Pilot login by QR on the host terminal. Not verified against WhatsApp itself (network). See WHATSAPP.md. |
+| 3.24 Digest | DIG | Built | Daily at the set time, once per day. Deterministic text always works. Gemini wording optional. |
+| 3.25 Escalations and checks | ESC | Built | Approval escalation, RFI and revision checks, conflict overdue notices, each in the cron pass. |
+| 3.26 Critical rules | RUL | Built | Owner rules with versions. Draft rules until the owner edits them. |
+| 3.27 Export, delete, reopen | EXP | **Not built** | Planned for a later phase (BUILD-PHASES phase 10). |
+| 3.28 Client NDA | NDA | Partly | Per-client flags built: Autodesk processing and native download. NDA file upload and the check-box flow (NDA-01 to NDA-03) not built. |
+| 3.29 Audit | AUD | Built | Append-only audit log with admin page. Database blocks edits and deletes. |
+| 3.30 Reports | REP | Built | Register (PDF, Excel), issues, transmittals, changes (Excel), owner dashboard (PDF). |
+| 3.31 System health | SYS | Partly | `/api/health` built (JSON, no secrets). Admin health page not built. Host status shows on the WhatsApp admin page. |
 
-Items marked "not live-tested" have unit or database tests but have not been run against a real Supabase project, WhatsApp number or Autodesk account.
+## Changes since version 2 (16 Oct 2026)
+
+| Feature | Change | Why |
+|---|---|---|
+| WA-01, WA-15 | Recipients limited to internal users; client users rejected by the admin action | Confirmed rule |
+| WA-02 | Upload and decision events on by default (13 events) | Owner confirmed the decision list (16 Oct) |
+| WA-03, WA-08 | A reply to the person is allowed right after STOP; alerts stay blocked | The STOP confirmation must reach the owner |
+| WA-11 | Host heartbeat every 60 s; admin shows not reporting after 3 minutes | Vercel cannot see the host |
+| WA-12 | QR is printed on the host terminal, not in the web app | The host holds the session. Admin page shows the state and steps. |
+| WA-14 | No quiet hours (unchanged) | |
+| VIEW-02, VIEW-05 | Clients view CAD in the portal when the NDA flag allows | Owner confirmed (16 Oct) |
+| VIEW-03 | Failed translation can be retried up to three times; `x-ads-force` only on retry | Autodesk reference: the header deletes existing derivatives |
+| CLS-05 | Clash detail page shows linked sheets in the same viewer | Owner asked for one viewer for all CAD and PDF |
+| SET-08 | Working days Monday to Friday, no holiday list yet | Owner confirmed |
+| CFL-07 | Unchanged | |
+| ESC | Cron every minute on Vercel Pro (was once a day) | Owner confirmed Pro plan |
+
+## Open feature questions (16 Oct 2026)
+
+- Gemini: which data may leave the firm (affects DIG-04).
+- Clash export format (CLS-04): awaiting a sample.
+- Holiday list (SET-08): awaiting the list.
+- Written acceptance of the WhatsApp Web ban risk (WA pilot).
+- Escalation and approval wording for clients: not decided.
 
 ---
 
@@ -341,8 +378,8 @@ This is the complete feature list for the pilot. Each feature has an ID, a prior
 | WA-08 | STOP and START | P0 | Recipient | Message "STOP" sets opted-out. "START" sets opted-in again only if the admin has confirmed the recipient. Both replies confirm the change. |
 | WA-09 | Inbound commands | P0 | Allowlisted numbers | Commands in WA-10. Other numbers are ignored and logged. |
 | WA-10 | Command list | P0 | Allowlisted | `today`, `overdue`, `critical`, `digest`, `help`. Unknown text returns the command list. Replies are built from database queries, with no AI. |
-| WA-11 | Connection health | P0 | System | Worker reports state every minute. Disconnected for more than 5 minutes → admin alerted in-app and by email (NTF-04). |
-| WA-12 | Re-link | P0 | AD | Admin can see the QR code when re-linking is needed, in the admin panel, through the worker. |
+| WA-11 | Connection health | P0 | System | The WhatsApp host writes a heartbeat every 60 seconds (superseded: the host, not a worker). Disconnected for more than 5 minutes → admin alerted in-app and by email (NTF-04). |
+| WA-12 | Re-link | P0 | AD | When re-linking is needed, the QR code is printed on the host terminal. The admin page shows the state and the steps (superseded 16 Oct: not shown in the web app). |
 | WA-13 | Message log | P0 | AD | Every outgoing and incoming message with time, status, recipient and event. Body preview stored for audit. |
 | WA-14 | No quiet hours | P0 | | Messages send at any hour (decision). |
 | WA-15 | No client recipients | P0 | | Client users cannot be added as WhatsApp recipients. The system rejects it. |
@@ -352,7 +389,7 @@ This is the complete feature list for the pilot. Each feature has an ID, a prior
 
 | ID | Feature | Pri | Roles | Acceptance criteria |
 |---|---|---|---|---|
-| DIG-01 | Scheduled digest | P0 | AD | Sent at 09:00 IST (SET-06) to each recipient. Missed digest (worker down) is sent on restart with the note "Sent late." |
+| DIG-01 | Scheduled digest | P0 | AD | Sent at 09:00 IST (SET-06) to each recipient. Missed digest (host down) is sent on restart with the note "Sent late." |
 | DIG-02 | On-demand digest | P0 | Recipient | `digest` command (WA-10) sends the digest now. Rate limit: once per 10 minutes per number. |
 | DIG-03 | Sections | P0 | | 1. Since last digest (uploads, decisions, issued revisions). 2. Waiting on you (approvals). 3. Overdue (sheets, reviews, RFIs, submittals, conflicts). 4. Due today. 5. Open critical items. 6. Overdue client conflicts (owner only). 7. Gemini paragraphs (DIG-04). 8. Your items (DIG-06). 9. Dashboard link. |
 | DIG-04 | Gemini paragraphs | P0 | | Two optional paragraphs: (a) explanation of why each overdue item is overdue, (b) list of items changed in the last 24 hours. Input rows only. Validated per DIG-05. Labelled "Summary generated by Gemini". |
@@ -432,7 +469,7 @@ This is the complete feature list for the pilot. Each feature has an ID, a prior
 
 | ID | Feature | Pri | Roles | Acceptance criteria |
 |---|---|---|---|---|
-| SYS-01 | Health page | P0 | AD | Shows: database status, worker status, WhatsApp connection, outbox queue length, last digest time, last successful send, failed sends. |
+| SYS-01 | Health page | P0 | AD | Shows: database status, host status (heartbeat), WhatsApp connection, outbox queue length, last digest time, last successful send, failed sends. |
 | SYS-02 | Failed sends list | P0 | AD | Failed messages with reason and a retry button. |
 | SYS-03 | Job status | P0 | AD | Last run and result for escalations, overdue checks, digest, exports. |
 
@@ -506,7 +543,7 @@ Templates are versioned. Each has a code, the variables it needs, and the text. 
 | WA-T08 RFI overdue | RFI past due | `RFI {number} overdue ({days} working days). {project}. {link}` |
 | WA-T09 Critical clash | Critical clash opened | `Critical clash {number} on {project}: {title}. Disciplines {disc_a} and {disc_b}. {link}` |
 | WA-T10 Stale revision | Stale-revision flag (FIL-05) | `Stale revision flag: {sheet} {rev} file changed without a new revision. {link}` |
-| WA-T11 Connection | Worker disconnected > 5 min | `WhatsApp connection lost since {time} IST. Re-link: {link}` (sent in-app and by email) |
+| WA-T11 Connection | Host disconnected > 5 min | `WhatsApp connection lost since {time} IST. Re-link: {link}` (sent in-app and by email; email not yet built) |
 | WA-T12 Digest | 09:00 IST or on demand | See Appendix B |
 | WA-T13 Cap reached | Daily cap hit | `More items not sent today. See dashboard: {link}` |
 | WA-T14 Opt-out confirm | STOP received | `You will no longer receive updates. Send START to resume.` |
@@ -540,7 +577,7 @@ Rules: under 1,500 characters (DIG-08). Missing sections are omitted, not shown 
 |---|---|
 | 1 Upload and decision alerts immediate | FIL-08, WA-02, WA-05 |
 | 2 Pilot recipients: owner plus 3–4 internal | WA-01, WA-15 |
-| 3 Channel: test number now, Cloud API later | WA-12, ARCHITECTURE 6.3 |
+| 3 Channel: test number now, Cloud API later | WA-12, WHATSAPP.md 1 (superseded in part 16 Oct: pilot is the QR-linked host, production is the Cloud API) |
 | 4 Digest 09:00 IST, no recap | DIG-01, SET-06 |
 | 5 Critical rules owner-defined | RUL-01 to RUL-06 |
 | 6a Register from software | REG-01 to REG-04, IMP-01 to IMP-06 |
@@ -573,7 +610,7 @@ Rules: under 1,500 characters (DIG-08). Missing sections are omitted, not shown 
 | 28 Autodesk viewing | VIEW-02, VIEW-03 |
 | 29 Viewable for all with access | VIEW-01, VIEW-02 |
 | 30 Supabase storage | FIL-01, SCHEMA.md 7 |
-| 31 Hostinger Docker worker | ARCHITECTURE 2, TECH-STACK 5 |
+| 31 Hostinger Docker worker | Superseded 16 Oct: Vercel plus the WhatsApp host (ARCHITECTURE 1, TECH-STACK 7) |
 | 34 Export and delete (admin, contents, retention) | EXP-01 to EXP-08 |
 | 35 NDA checkbox and upload | NDA-01 to NDA-04 |
 | 36 Drafters upload | FIL-01, Roles |

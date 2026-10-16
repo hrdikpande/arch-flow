@@ -2,7 +2,7 @@
 
 **Version:** 2.0 (supersedes SCOPE.md v1)
 **Date:** 16 Oct 2026
-**Status:** Draft for owner approval
+**Status:** Draft for owner approval. **Updated 16 Oct 2026**: see the change block below and VERIFICATION.md section 10.
 **Companion documents:** FEATURES.md (feature inventory and acceptance criteria), SCHEMA.md, TECH-STACK.md, ARCHITECTURE.md, DESIGN.md, BUILD-PHASES.md, IMPLEMENTATION-PLAN.md, VERIFICATION.md
 
 ---
@@ -253,7 +253,7 @@ Go-live happens when all of these are true:
 2. Register imported and checked by the project lead for each pilot project.
 3. Users and roles created; client accounts created for pilot clients only.
 4. WhatsApp group members confirmed opt-in in writing; owner signed the WhatsApp risk acceptance.
-5. Dedicated test number and worker running on the Hostinger VPS; health check green for 48 hours.
+5. Dedicated test number linked to the always-on WhatsApp host (owner's machine or a VM, pm2-supervised); host heartbeat green for 48 hours.
 6. Autodesk, Gemini and data-residency items (O2, O3, O-A6, O-A7) closed.
 7. Baselines recorded for the three pilot measures.
 8. Backup and restore tested once on staging.
@@ -263,7 +263,7 @@ Go-live happens when all of these are true:
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| WhatsApp restriction or ban on the test number | Medium | High (alerts stop) | Dedicated number; daily cap; pacing; in-app fallback; owner accepted risk in writing; Cloud API for production |
+| WhatsApp restriction or ban on the test number | Medium | High (alerts stop) | Dedicated number; daily cap (30); pacing (3 per minute); in-app fallback; owner accepts the risk in writing; Cloud API for production |
 | Poor data quality in the imported register | High | High (false alerts, loss of trust) | Validation preview; project lead checks before go-live; error report |
 | Low adoption by drafters and checkers | Medium | High | Upload is quick and sheet-first; training per role; owner uses the dashboard in weekly reviews |
 | Autodesk cost higher than expected | Medium | Medium | Pricing confirmed before build (O5); PDF fallback; translation only for pilot projects |
@@ -272,7 +272,7 @@ Go-live happens when all of these are true:
 | Gemini output contains incorrect numbers | Low | High | Validation against source rows; fallback to deterministic text |
 | Scope creep from "all modules" | High | High | Feature inventory with IDs; changes need owner approval; P2 list fixed |
 | Combined roles blur accountability | Medium | Medium | Responsibility recorded per action; same-person approvals flagged in the audit view (APR-06, AUD-03) |
-| Supabase service role misuse in worker code | Low | High | Explicit project checks in every worker query; code review; tests |
+| Supabase service role misuse in server or host code | Low | High | Explicit project checks in every query; code review; API harness and RLS tests |
 | Owner's rules are unclear or too broad | High | Medium | Draft definitions provided; rule versions; review at week 3 |
 
 ## 10. Assumptions
@@ -287,7 +287,7 @@ Go-live happens when all of these are true:
 
 - Lead's answer on the clash export format (O1).
 - Autodesk account and pricing (O5), NWD support (O4).
-- Hostinger location confirmed (O2).
+- WhatsApp host location confirmed (owner's machine or a VM). Hostinger is removed (16 Oct).
 - Supabase plan and India region (O-A4, O-A9).
 - Owner's answers to open questions (FEATURES.md, section 12).
 
@@ -303,3 +303,16 @@ Go-live happens when all of these are true:
 | Q-P6 | Do clients need notifications by email when a response arrives? | Client experience |
 | Q-P7 | Dashboard charts: needed in the pilot, or tables and counts only? | Build effort |
 | Q-P8 | Naming and transmittal formats approved (A-N1, A-T1)? | Data consistency |
+
+---
+
+## Change block, 16 Oct 2026
+
+What changed since version 2.0 and why. Full trace: VERIFICATION.md section 10.
+
+- **Hosting:** Vercel Pro (per-minute checks). Netlify and Hostinger removed. The WhatsApp session runs on an always-on host, because Vercel cannot hold it.
+- **WhatsApp:** two channels. The pilot uses a QR-linked WhatsApp Web session on a dedicated test number (owner and internal allowlist only). Client-facing messages use the Cloud API later. Upload and decision alerts are on by default. A reply to a person is allowed right after STOP.
+- **Clients and CAD:** clients may view CAD in the portal when their organisation allows it (NDA). Clients may download when their organisation allows it.
+- **Clash review:** the clash page shows each linked sheet in the same drawing viewer as the sheet page.
+- **Working days:** Monday to Friday. No holiday list yet.
+- **Status:** the build covers every P0 and P1 feature. The pilot cannot start until the open items in section 9 are closed.

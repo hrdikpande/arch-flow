@@ -1,203 +1,111 @@
 -- =====================================================================
--- Drawing Control & Alerts — database schema v2
--- STATUS: DRAFT. Not executed. Validate on a Supabase staging project first.
--- Target: Supabase Postgres 15+ (India region).
--- Conventions:
---   * UUID primary keys (gen_random_uuid), timestamptz in UTC.
---   * Every table has RLS enabled. Policies are outlined at the end and
---     must be written and tested per table before go-live (see SCHEMA.md).
---   * Business changes go through API functions that enforce the state
---     machine. Direct writes from client roles are not permitted.
+-- arch-flow database schema (generated from the migrations, 16 Oct 2026)
+-- Source: supabase/migrations/*.sql applied in name order to PostgreSQL 16.
+-- Regenerate with: pg_dump --schema-only --no-owner --no-privileges -n public <db>
+-- Do not edit by hand. Change a migration, then regenerate this file.
+-- Verified: supabase/tests/rls_policy_tests.sql (RLS) and schema_behaviour_tests.sql (rules).
 -- =====================================================================
 
--- ---------- Enumerations --------------------------------------------
+\restrict 0ig6VHGkJvgUSJF5WljitfNGwdp4jfPGJg2wdX72lgSZlqkMJu9VhYxBRlBNLRH
 
-create type role_code as enum (
-  'admin', 'project_head', 'discipline_lead', 'drafter', 'checker', 'client'
+CREATE SCHEMA public;
+
+COMMENT ON SCHEMA public IS 'standard public schema';
+
+CREATE TYPE public.approval_status AS ENUM (
+    'pending',
+    'approved',
+    'rejected',
+    'cancelled'
 );
 
-create type sheet_status as enum (
-  'not_started', 'assigned', 'wip', 'internal_check', 'coordination',
-  'approved', 'issued', 'client_review', 'commented', 'revised',
-  'gfc', 'ifc', 'superseded'
+CREATE TYPE public.conflict_status AS ENUM (
+    'open',
+    'responded',
+    'awaiting_client',
+    'closed'
 );
 
-create type revision_status as enum ('wip', 'issued', 'superseded');
-create type issue_purpose as enum ('issued', 'ifc', 'gfc');
-create type priority_level as enum ('critical', 'major', 'minor');
-create type file_format as enum ('pdf', 'dwg', 'rvt', 'ifc', 'nwd', 'other');
-create type file_state as enum ('uploading', 'stored', 'translating', 'translated', 'translation_failed');
-create type approval_status as enum ('pending', 'approved', 'rejected', 'cancelled');
-create type conflict_status as enum ('open', 'responded', 'awaiting_client', 'closed');
-create type outbox_status as enum ('queued', 'sending', 'sent', 'failed', 'held', 'cancelled');
-create type export_status as enum ('queued', 'building', 'ready', 'failed', 'expired');
-
--- ---------- Shared helpers ------------------------------------------
-
-create or replace function set_updated_at()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$;
-
--- ---------- Identity, organisations, projects ------------------------
-
-create table client_orgs (
-  id                    uuid primary key default gen_random_uuid(),
-  name                  text not null,
-  nda_required          boolean not null default false,
-  nda_file_id           uuid,                 -- FK added after files table
-  nda_uploaded_at       timestamptz,
-  allow_aps_processing  boolean not null default true,   -- false = PDF only (NDA)
-  allow_native_download boolean not null default true,   -- A-V1
-  created_at            timestamptz not null default now()
+CREATE TYPE public.export_status AS ENUM (
+    'queued',
+    'building',
+    'ready',
+    'failed',
+    'expired'
 );
 
-create table profiles (
-  id             uuid primary key references auth.users(id) on delete restrict,
-  full_name      text not null,
-  email          text not null unique,
-  phone_e164     text,
-  client_org_id  uuid references client_orgs(id),
-  is_active      boolean not null default true,
-  created_by     uuid references profiles(id),
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now()
-);
-create trigger profiles_updated before update on profiles
-  for each row execute function set_updated_at();
-
-create table projects (
-  id             uuid primary key default gen_random_uuid(),
-  code           text not null unique,            -- e.g. NRH-BLR-01
-  name           text not null,
-  client_org_id  uuid references client_orgs(id),
-  status         text not null default 'active'
-                 check (status in ('active', 'on_hold', 'closed', 'exported', 'deleted')),
-  start_date     date,
-  created_by     uuid references profiles(id),
-  created_at     timestamptz not null default now(),
-  updated_at     timestamptz not null default now()
-);
-create trigger projects_updated before update on projects
-  for each row execute function set_updated_at();
-
--- Roles. A user may hold several roles on one project (combined roles).
--- Admin is firm-wide (project_id is null). Every other role is per project.
-create table user_roles (
-  id          uuid primary key default gen_random_uuid(),
-  user_id     uuid not null references profiles(id) on delete cascade,
-  role        role_code not null,
-  project_id  uuid references projects(id) on delete cascade,
-  created_at  timestamptz not null default now(),
-  constraint user_roles_admin_is_firmwide check ((role = 'admin') = (project_id is null)),
-  constraint user_roles_unique unique (user_id, role, project_id)
+CREATE TYPE public.file_format AS ENUM (
+    'pdf',
+    'dwg',
+    'rvt',
+    'ifc',
+    'nwd',
+    'other'
 );
 
-create table disciplines (
-  code        text primary key,               -- used in file names
-  name        text not null,
-  sort_order  int  not null
+CREATE TYPE public.file_state AS ENUM (
+    'uploading',
+    'stored',
+    'translating',
+    'translated',
+    'translation_failed'
 );
 
-insert into disciplines (code, name, sort_order) values
-  ('ARC', 'Architecture',          1),
-  ('STR', 'Structure',             2),
-  ('CIV', 'Civil',                 3),
-  ('HVAC', 'HVAC',                 4),
-  ('ELE', 'Electrical',            5),
-  ('PLB', 'Plumbing',              6),
-  ('FIR', 'Fire',                  7),
-  ('MGS', 'Medical Gas',           8),
-  ('ELV', 'ELV',                   9),
-  ('MEP', 'MEP Coordination',     10),
-  ('LND', 'Landscape',            11),
-  ('OTH', 'Other',                12);
-
-create table holidays (
-  day    date primary key,
-  name   text not null,
-  scope  text not null default 'firm'
+CREATE TYPE public.issue_purpose AS ENUM (
+    'issued',
+    'ifc',
+    'gfc'
 );
 
--- Settings: firm defaults have project_id null; project overrides have a project_id.
--- NULLS NOT DISTINCT needs Postgres 15+.
-create table settings (
-  id          uuid primary key default gen_random_uuid(),
-  project_id  uuid references projects(id) on delete cascade,
-  key         text not null,
-  value       jsonb not null,
-  updated_by  uuid references profiles(id),
-  updated_at  timestamptz not null default now(),
-  constraint settings_unique unique nulls not distinct (project_id, key)
+CREATE TYPE public.outbox_status AS ENUM (
+    'queued',
+    'sending',
+    'sent',
+    'failed',
+    'held',
+    'cancelled'
 );
 
-insert into settings (project_id, key, value) values
-  (null, 'sla.internal_review_days',    '3'),
-  (null, 'sla.client_review_days',      '5'),
-  (null, 'sla.rfi_response_days',       '7'),
-  (null, 'sla.submittal_approval_days', '10'),
-  (null, 'sla.conflict_reply_days',     '3'),
-  (null, 'approval.escalation_days',    '2'),
-  (null, 'whatsapp.daily_cap',          '30'),
-  (null, 'digest.time_local',           '"09:00"'),
-  (null, 'digest.timezone',             '"Asia/Kolkata"'),
-  (null, 'naming.file_pattern',         '"{PROJECT}_{DISCIPLINE}_{SHEET}_{REV}"'),
-  (null, 'naming.transmittal_pattern',  '"{PROJECT}-TR-{YYYYMM}-{NNN}"');
-
--- ---------- Register: sheets, revisions, files -----------------------
-
-create table sheets (
-  id                   uuid primary key default gen_random_uuid(),
-  project_id           uuid not null references projects(id) on delete cascade,
-  sheet_number         text not null,
-  title                text not null,
-  discipline_code      text not null references disciplines(code),
-  status               sheet_status not null default 'not_started',
-  owner_id             uuid references profiles(id),
-  due_date             date,
-  current_revision_id  uuid,                    -- FK added after revisions
-  is_live              boolean generated always as
-                         (status in ('issued', 'gfc', 'ifc')) stored,
-  created_by           uuid references profiles(id),
-  created_at           timestamptz not null default now(),
-  updated_at           timestamptz not null default now(),
-  constraint sheets_number_unique unique (project_id, sheet_number)
-);
-create trigger sheets_updated before update on sheets
-  for each row execute function set_updated_at();
-
-create table revisions (
-  id           uuid primary key default gen_random_uuid(),
-  sheet_id     uuid not null references sheets(id) on delete cascade,
-  rev_code     text not null check (rev_code ~ '^R[0-9]{1,3}$'),   -- R0, R1, R2
-  seq          int  not null check (seq >= 0),
-  status       revision_status not null default 'wip',
-  purpose      issue_purpose,                   -- set when issued
-  issued_at    timestamptz,
-  issued_by    uuid references profiles(id),
-  created_by   uuid references profiles(id),
-  created_at   timestamptz not null default now(),
-  constraint revisions_seq_unique unique (sheet_id, seq),
-  constraint revisions_code_unique unique (sheet_id, rev_code),
-  constraint revisions_issued_fields check (
-    (status = 'wip') or (issued_at is not null and issued_by is not null)
-  )
+CREATE TYPE public.priority_level AS ENUM (
+    'critical',
+    'major',
+    'minor'
 );
 
-alter table sheets
-  add constraint sheets_current_revision_fk
-  foreign key (current_revision_id) references revisions(id);
+CREATE TYPE public.revision_status AS ENUM (
+    'wip',
+    'issued',
+    'superseded'
+);
 
--- Issued revisions are immutable. Only status may change (issued -> superseded).
-create or replace function enforce_revision_immutable()
-returns trigger
-language plpgsql
-as $$
+CREATE TYPE public.role_code AS ENUM (
+    'admin',
+    'project_head',
+    'discipline_lead',
+    'drafter',
+    'checker',
+    'client'
+);
+
+CREATE TYPE public.sheet_status AS ENUM (
+    'not_started',
+    'assigned',
+    'wip',
+    'internal_check',
+    'coordination',
+    'approved',
+    'issued',
+    'client_review',
+    'commented',
+    'revised',
+    'gfc',
+    'ifc',
+    'superseded'
+);
+
+CREATE FUNCTION public.enforce_revision_immutable() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
 begin
   if old.status <> 'wip' then
     if (new.sheet_id, new.rev_code, new.seq, new.purpose, new.issued_at, new.issued_by)
@@ -212,114 +120,52 @@ begin
   return new;
 end;
 $$;
-create trigger revisions_immutable before update on revisions
-  for each row execute function enforce_revision_immutable();
 
-create table files (
-  id                   uuid primary key default gen_random_uuid(),
-  project_id           uuid not null references projects(id) on delete cascade,
-  sheet_id             uuid references sheets(id) on delete cascade,
-  revision_id          uuid references revisions(id) on delete set null,
-  storage_bucket       text not null default 'drawings',
-  storage_path         text not null unique,
-  original_name        text not null,
-  format               file_format not null,
-  size_bytes           bigint not null check (size_bytes >= 0),
-  sha256               text,
-  state                file_state not null default 'uploading',
-  aps_urn              text,
-  aps_job_id           text,
-  translation_attempts int not null default 0,
-  uploaded_by          uuid references profiles(id),
-  uploaded_at          timestamptz not null default now()
-);
+CREATE FUNCTION public.forbid_audit_change() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+begin
+  raise exception 'audit_log is append-only';
+end;
+$$;
 
-alter table client_orgs
-  add constraint client_orgs_nda_file_fk
-  foreign key (nda_file_id) references files(id);
+CREATE FUNCTION public.has_internal_project_role(p_project uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (
+    select 1 from user_roles ur
+    where ur.user_id = auth.uid()
+      and ur.project_id = p_project
+      and ur.role <> 'client'
+  );
+$$;
 
-alter table profiles
-  add constraint profiles_client_org_fk
-  foreign key (client_org_id) references client_orgs(id);
+CREATE FUNCTION public.is_admin() RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (
+    select 1 from user_roles ur
+    where ur.user_id = auth.uid() and ur.role = 'admin'
+  );
+$$;
 
-create table attachments (
-  id           uuid primary key default gen_random_uuid(),
-  file_id      uuid not null unique references files(id) on delete cascade,
-  entity_type  text not null check (entity_type in
-                 ('conflict_message', 'review_comment', 'rfi', 'clash', 'change_request', 'submittal')),
-  entity_id    uuid not null,
-  created_at   timestamptz not null default now()
-);
+CREATE FUNCTION public.is_client_of_project(p_project uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (
+    select 1 from user_roles ur
+    where ur.user_id = auth.uid()
+      and ur.project_id = p_project
+      and ur.role = 'client'
+  );
+$$;
 
-create table status_history (
-  id           bigint generated always as identity primary key,
-  entity_type  text not null,
-  entity_id    uuid not null,
-  from_state   text,
-  to_state     text not null,
-  actor_id     uuid references profiles(id),
-  note         text,
-  created_at   timestamptz not null default now()
-);
-
-create table review_comments (
-  id               uuid primary key default gen_random_uuid(),
-  revision_id      uuid not null references revisions(id) on delete cascade,
-  author_id        uuid not null references profiles(id),
-  body             text not null,
-  status           text not null default 'open' check (status in ('open', 'closed')),
-  resolved_by      uuid references profiles(id),
-  resolved_at      timestamptz,
-  resolution_note  text,
-  created_at       timestamptz not null default now()
-);
-
-create table change_requests (
-  id                 uuid primary key default gen_random_uuid(),
-  project_id         uuid not null references projects(id) on delete cascade,
-  sheet_id           uuid not null references sheets(id) on delete cascade,
-  revision_id        uuid references revisions(id),
-  reason             text not null,
-  cost_impact        numeric(14, 2),
-  time_impact_days   int,
-  status             text not null default 'requested'
-                     check (status in ('requested', 'approved', 'rejected', 'implemented')),
-  requested_by       uuid references profiles(id),
-  created_at         timestamptz not null default now()
-);
-
--- ---------- Transmittals ---------------------------------------------
-
-create table transmittal_counters (
-  project_id  uuid not null references projects(id) on delete cascade,
-  yyyymm      text not null check (yyyymm ~ '^[0-9]{6}$'),
-  last_value  int  not null default 0,
-  primary key (project_id, yyyymm)
-);
-
-create table transmittals (
-  id                 uuid primary key default gen_random_uuid(),
-  project_id         uuid not null references projects(id) on delete cascade,
-  number             text not null unique,
-  recipient_org_id   uuid references client_orgs(id),
-  recipient_text     text,                       -- contractor or consultant name when not a client
-  sent_at            timestamptz,
-  created_by         uuid references profiles(id),
-  created_at         timestamptz not null default now()
-);
-
-create table transmittal_items (
-  transmittal_id  uuid not null references transmittals(id) on delete cascade,
-  revision_id     uuid not null references revisions(id),
-  primary key (transmittal_id, revision_id)
-);
-
--- Atomic per-project, per-month counter for transmittal numbers.
--- Pattern is hard-coded here for the pilot. Read it from settings if the pattern changes.
-create or replace function next_transmittal_number(p_project uuid)
-returns text
-language plpgsql
-as $$
+CREATE FUNCTION public.next_transmittal_number(p_project uuid) RETURNS text
+    LANGUAGE plpgsql
+    AS $$
 declare
   v_code text;
   v_ym   text;
@@ -339,417 +185,1211 @@ begin
 end;
 $$;
 
--- ---------- Clashes, RFIs, submittals, authority checklists ----------
-
-create table clashes (
-  id             uuid primary key default gen_random_uuid(),
-  project_id     uuid not null references projects(id) on delete cascade,
-  number         text not null,
-  title          text not null,
-  description    text,
-  priority       priority_level not null,
-  status         text not null default 'open' check (status in ('open', 'resolved', 'closed')),
-  discipline_a   text references disciplines(code),
-  discipline_b   text references disciplines(code),
-  owner_id       uuid references profiles(id),
-  due_date       date,
-  source_ref     text,                         -- Navisworks clash ID from import
-  created_at     timestamptz not null default now(),
-  resolved_at    timestamptz,
-  constraint clashes_number_unique unique (project_id, number)
-);
-
-create table clash_sheets (
-  clash_id  uuid not null references clashes(id) on delete cascade,
-  sheet_id  uuid not null references sheets(id) on delete cascade,
-  primary key (clash_id, sheet_id)
-);
-
-create table rfis (
-  id           uuid primary key default gen_random_uuid(),
-  project_id   uuid not null references projects(id) on delete cascade,
-  number       text not null,
-  subject      text not null,
-  body         text,
-  sheet_id     uuid references sheets(id),
-  priority     priority_level not null default 'minor',
-  status       text not null default 'open' check (status in ('open', 'answered', 'closed')),
-  raised_by    uuid references profiles(id),
-  assignee_id  uuid references profiles(id),
-  due_date     date,
-  answer       text,
-  answered_at  timestamptz,
-  created_at   timestamptz not null default now(),
-  constraint rfis_number_unique unique (project_id, number)
-);
-
-create table submittals (
-  id            uuid primary key default gen_random_uuid(),
-  project_id    uuid not null references projects(id) on delete cascade,
-  number        text not null,
-  item          text not null,
-  sheet_id      uuid references sheets(id),
-  status        text not null default 'submitted'
-                check (status in ('submitted', 'under_review', 'approved',
-                                  'approved_with_comments', 'rejected')),
-  due_date      date,
-  submitted_by  uuid references profiles(id),
-  created_at    timestamptz not null default now(),
-  constraint submittals_number_unique unique (project_id, number)
-);
-
-create table authority_checklists (
-  id              uuid primary key default gen_random_uuid(),
-  project_id      uuid not null references projects(id) on delete cascade,
-  authority       text not null,               -- e.g. Building sanction, Fire NOC, AERB
-  item            text not null,
-  required        boolean not null default true,
-  sheet_id        uuid references sheets(id),
-  status          text not null default 'pending'
-                  check (status in ('pending', 'submitted', 'approved', 'not_applicable')),
-  responsible_id  uuid references profiles(id),
-  due_date        date,
-  ticked_by       uuid references profiles(id),
-  ticked_at       timestamptz
-);
-
--- ---------- Approvals -------------------------------------------------
-
-create table approvals (
-  id            uuid primary key default gen_random_uuid(),
-  project_id    uuid not null references projects(id) on delete cascade,
-  entity_type   text not null,                -- 'sheet' for the pilot
-  entity_id     uuid not null,
-  transition    text not null,                -- e.g. 'change_live_sheet', 'internal_check_to_approved'
-  requested_by  uuid not null references profiles(id),
-  assignee_id   uuid not null references profiles(id),
-  status        approval_status not null default 'pending',
-  due_at        timestamptz not null,
-  decided_by    uuid references profiles(id),
-  decided_at    timestamptz,
-  reason        text,
-  escalated_at  timestamptz,
-  escalated_to  uuid references profiles(id),
-  created_at    timestamptz not null default now(),
-  constraint approvals_rejection_reason check (status <> 'rejected' or reason is not null)
-);
-
--- ---------- Conflicts (client portal) ---------------------------------
-
-create table conflicts (
-  id               uuid primary key default gen_random_uuid(),
-  project_id       uuid not null references projects(id) on delete cascade,
-  client_org_id    uuid not null references client_orgs(id),
-  sheet_id         uuid references sheets(id),
-  transmittal_id   uuid references transmittals(id),
-  subject          text not null check (char_length(subject) between 1 and 200),
-  status           conflict_status not null default 'open',
-  raised_by        uuid not null references profiles(id),
-  due_at           timestamptz not null,       -- set from working-day rule when raised
-  first_response_at timestamptz,
-  closed_at        timestamptz,
-  created_at       timestamptz not null default now()
-);
-
-create table conflict_messages (
-  id           uuid primary key default gen_random_uuid(),
-  conflict_id  uuid not null references conflicts(id) on delete cascade,
-  author_id    uuid not null references profiles(id),
-  body         text not null check (char_length(body) between 1 and 10000),
-  created_at   timestamptz not null default now()
-);
-
--- ---------- Events, rules, in-app notifications ----------------------
-
-create table events (
-  id            bigint generated always as identity primary key,
-  type          text not null,
-  project_id    uuid references projects(id) on delete cascade,
-  entity_type   text,
-  entity_id     uuid,
-  actor_id      uuid references profiles(id),
-  payload       jsonb not null default '{}'::jsonb,
-  rule_version  int,
-  created_at    timestamptz not null default now()
-);
-create index events_project_time on events (project_id, created_at desc);
-create index events_type_time on events (type, created_at desc);
-
-create table rules (
-  id          uuid primary key default gen_random_uuid(),
-  project_id  uuid references projects(id) on delete cascade,   -- null = firm-wide
-  kind        text not null check (kind in
-                ('critical_clash', 'critical_rfi', 'critical_revision', 'alert_event')),
-  name        text not null,
-  definition  jsonb not null,
-  active      boolean not null default true,
-  version     int not null default 1,
-  created_by  uuid references profiles(id),
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now()
-);
-create trigger rules_updated before update on rules
-  for each row execute function set_updated_at();
-
-create table rule_versions (
-  id          uuid primary key default gen_random_uuid(),
-  rule_id     uuid not null references rules(id) on delete cascade,
-  version     int not null,
-  definition  jsonb not null,
-  changed_by  uuid references profiles(id),
-  changed_at  timestamptz not null default now(),
-  constraint rule_versions_unique unique (rule_id, version)
-);
-
-create table notifications (
-  id          uuid primary key default gen_random_uuid(),
-  user_id     uuid not null references profiles(id) on delete cascade,
-  event_id    bigint references events(id) on delete cascade,
-  title       text not null,
-  body        text,
-  link        text,
-  read_at     timestamptz,
-  created_at  timestamptz not null default now()
-);
-create index notifications_user_unread on notifications (user_id, read_at);
-
--- ---------- WhatsApp -------------------------------------------------
-
-create table whatsapp_recipients (
-  id                   uuid primary key default gen_random_uuid(),
-  profile_id           uuid references profiles(id) on delete cascade,
-  phone_e164           text not null unique,
-  opted_in             boolean not null default false,
-  opt_in_confirmed_at  timestamptz,           -- written confirmation recorded by admin
-  opted_out_at         timestamptz,           -- set by STOP
-  active               boolean not null default true,
-  created_at           timestamptz not null default now()
-);
-
-create table whatsapp_event_settings (
-  event_type  text primary key,
-  enabled     boolean not null default false,
-  updated_by  uuid references profiles(id),
-  updated_at  timestamptz not null default now()
-);
-
-create table whatsapp_outbox (
-  id               uuid primary key default gen_random_uuid(),
-  recipient_id     uuid not null references whatsapp_recipients(id) on delete cascade,
-  kind             text not null check (kind in ('alert', 'digest', 'command_reply', 'escalation', 'health')),
-  event_id         bigint references events(id) on delete set null,
-  template_code    text not null,
-  variables        jsonb not null default '{}'::jsonb,
-  body_preview     text,                       -- rendered text, stored for audit
-  dedupe_key       text not null unique,
-  status           outbox_status not null default 'queued',
-  attempts         int not null default 0,
-  next_attempt_at  timestamptz not null default now(),
-  wa_message_id    text,
-  sent_at          timestamptz,
-  last_error       text,
-  created_at       timestamptz not null default now()
-);
-create index whatsapp_outbox_due on whatsapp_outbox (status, next_attempt_at);
-
-create table whatsapp_inbound (
-  id              uuid primary key default gen_random_uuid(),
-  from_phone      text not null,
-  recipient_id    uuid references whatsapp_recipients(id) on delete set null,
-  body            text,
-  command         text,
-  is_allowed      boolean not null,
-  reply_outbox_id uuid references whatsapp_outbox(id) on delete set null,
-  received_at     timestamptz not null default now()
-);
-
-create table digests (
-  id                    uuid primary key default gen_random_uuid(),
-  recipient_id          uuid not null references whatsapp_recipients(id) on delete cascade,
-  digest_date           date not null,
-  trigger_type          text not null check (trigger_type in ('scheduled', 'on_demand')),
-  deterministic_text    text not null,
-  ai_text               text,
-  ai_validated          boolean not null default false,
-  ai_rejection_reason   text,
-  sent_text             text,
-  created_at            timestamptz not null default now()
-);
-
--- ---------- Register import, export ---------------------------------
-
-create table register_imports (
-  id           uuid primary key default gen_random_uuid(),
-  project_id   uuid not null references projects(id) on delete cascade,
-  uploaded_by  uuid references profiles(id),
-  file_id      uuid references files(id),
-  status       text not null default 'validating'
-               check (status in ('validating', 'ready', 'confirmed', 'failed', 'cancelled')),
-  rows_total   int not null default 0,
-  rows_ok      int not null default 0,
-  rows_failed  int not null default 0,
-  errors       jsonb not null default '[]'::jsonb,
-  confirmed_at timestamptz,
-  created_at   timestamptz not null default now()
-);
-
-create table exports (
-  id            uuid primary key default gen_random_uuid(),
-  project_id    uuid not null references projects(id) on delete cascade,
-  requested_by  uuid references profiles(id),
-  status        export_status not null default 'queued',
-  storage_path  text,
-  sha256        text,
-  size_bytes    bigint,
-  expires_at    timestamptz,
-  created_at    timestamptz not null default now(),
-  completed_at  timestamptz
-);
-
--- ---------- Audit (append-only) --------------------------------------
-
-create table audit_log (
-  id          bigint generated always as identity primary key,
-  actor_id    uuid references profiles(id),
-  action      text not null,
-  entity_type text,
-  entity_id   uuid,
-  project_id  uuid,
-  before      jsonb,
-  after       jsonb,
-  ip          inet,
-  user_agent  text,
-  created_at  timestamptz not null default now()
-);
-
-create or replace function forbid_audit_change()
-returns trigger
-language plpgsql
-as $$
+CREATE FUNCTION public.set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
 begin
-  raise exception 'audit_log is append-only';
+  new.updated_at = now();
+  return new;
 end;
 $$;
-create trigger audit_no_update_delete before update or delete on audit_log
-  for each row execute function forbid_audit_change();
-create trigger audit_no_truncate before truncate on audit_log
-  for each statement execute function forbid_audit_change();
 
--- ---------- Helper functions for RLS ---------------------------------
+CREATE TABLE public.approvals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    entity_type text NOT NULL,
+    entity_id uuid NOT NULL,
+    transition text NOT NULL,
+    requested_by uuid NOT NULL,
+    assignee_id uuid NOT NULL,
+    status public.approval_status DEFAULT 'pending'::public.approval_status NOT NULL,
+    due_at timestamp with time zone NOT NULL,
+    decided_by uuid,
+    decided_at timestamp with time zone,
+    reason text,
+    escalated_at timestamp with time zone,
+    escalated_to uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT approvals_rejection_reason CHECK (((status <> 'rejected'::public.approval_status) OR (reason IS NOT NULL)))
+);
 
-create or replace function is_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from user_roles ur
-    where ur.user_id = auth.uid() and ur.role = 'admin'
-  );
-$$;
+CREATE TABLE public.attachments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    file_id uuid NOT NULL,
+    entity_type text NOT NULL,
+    entity_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT attachments_entity_type_check CHECK ((entity_type = ANY (ARRAY['conflict_message'::text, 'review_comment'::text, 'rfi'::text, 'clash'::text, 'change_request'::text, 'submittal'::text])))
+);
 
-create or replace function has_internal_project_role(p_project uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from user_roles ur
-    where ur.user_id = auth.uid()
-      and ur.project_id = p_project
-      and ur.role <> 'client'
-  );
-$$;
+CREATE TABLE public.audit_log (
+    id bigint NOT NULL,
+    actor_id uuid,
+    action text NOT NULL,
+    entity_type text,
+    entity_id uuid,
+    project_id uuid,
+    before jsonb,
+    after jsonb,
+    ip inet,
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
-create or replace function is_client_of_project(p_project uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from user_roles ur
-    where ur.user_id = auth.uid()
-      and ur.project_id = p_project
-      and ur.role = 'client'
-  );
-$$;
+ALTER TABLE public.audit_log ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.audit_log_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
 
--- ---------- Indexes for the main queries -----------------------------
+CREATE TABLE public.authority_checklists (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    authority text NOT NULL,
+    item text NOT NULL,
+    required boolean DEFAULT true NOT NULL,
+    sheet_id uuid,
+    status text DEFAULT 'pending'::text NOT NULL,
+    responsible_id uuid,
+    due_date date,
+    ticked_by uuid,
+    ticked_at timestamp with time zone,
+    CONSTRAINT authority_checklists_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'submitted'::text, 'approved'::text, 'not_applicable'::text])))
+);
 
-create index sheets_project_status on sheets (project_id, status);
-create index sheets_owner on sheets (owner_id);
-create index sheets_due on sheets (due_date);
-create index revisions_sheet on revisions (sheet_id);
-create index files_sheet on files (sheet_id);
-create index approvals_assignee_open on approvals (assignee_id, status);
-create index conflicts_project_status on conflicts (project_id, status, due_at);
-create index clashes_project_status on clashes (project_id, status, priority);
-create index rfis_project_status on rfis (project_id, status, due_date);
-create index user_roles_user on user_roles (user_id);
+CREATE TABLE public.authority_templates (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    authority text NOT NULL,
+    item text NOT NULL,
+    required boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
--- ---------- Row Level Security -----------------------------------------
--- Enable on every table. Policies below are an outline for the most
--- sensitive tables. Full policies are written and tested in Phase 1
--- (see SCHEMA.md, section 6).
+CREATE TABLE public.change_requests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    sheet_id uuid NOT NULL,
+    revision_id uuid,
+    reason text NOT NULL,
+    cost_impact numeric(14,2),
+    time_impact_days integer,
+    status text DEFAULT 'requested'::text NOT NULL,
+    requested_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    approval_id uuid,
+    sheet_status_at_request text,
+    CONSTRAINT change_requests_status_check CHECK ((status = ANY (ARRAY['requested'::text, 'approved'::text, 'rejected'::text, 'implemented'::text])))
+);
 
-alter table client_orgs            enable row level security;
-alter table profiles               enable row level security;
-alter table projects               enable row level security;
-alter table user_roles             enable row level security;
-alter table disciplines            enable row level security;
-alter table holidays               enable row level security;
-alter table settings               enable row level security;
-alter table sheets                 enable row level security;
-alter table revisions              enable row level security;
-alter table files                  enable row level security;
-alter table attachments            enable row level security;
-alter table status_history         enable row level security;
-alter table review_comments        enable row level security;
-alter table change_requests        enable row level security;
-alter table transmittal_counters   enable row level security;
-alter table transmittals           enable row level security;
-alter table transmittal_items      enable row level security;
-alter table clashes                enable row level security;
-alter table clash_sheets           enable row level security;
-alter table rfis                   enable row level security;
-alter table submittals             enable row level security;
-alter table authority_checklists   enable row level security;
-alter table approvals              enable row level security;
-alter table conflicts              enable row level security;
-alter table conflict_messages      enable row level security;
-alter table events                 enable row level security;
-alter table rules                  enable row level security;
-alter table rule_versions          enable row level security;
-alter table notifications          enable row level security;
-alter table whatsapp_recipients    enable row level security;
-alter table whatsapp_event_settings enable row level security;
-alter table whatsapp_outbox        enable row level security;
-alter table whatsapp_inbound       enable row level security;
-alter table digests                enable row level security;
-alter table register_imports       enable row level security;
-alter table exports                enable row level security;
-alter table audit_log              enable row level security;
+CREATE TABLE public.clash_sheets (
+    clash_id uuid NOT NULL,
+    sheet_id uuid NOT NULL
+);
 
--- Example policies (sheets). Clients read sheets through a restricted view,
--- not the base table. Full set to be written in Phase 1.
-create policy sheets_read_internal on sheets
-  for select to authenticated
-  using (is_admin() or has_internal_project_role(project_id));
+CREATE TABLE public.clashes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    number text NOT NULL,
+    title text NOT NULL,
+    description text,
+    priority public.priority_level NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    discipline_a text,
+    discipline_b text,
+    owner_id uuid,
+    due_date date,
+    source_ref text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    resolved_at timestamp with time zone,
+    CONSTRAINT clashes_status_check CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text, 'closed'::text])))
+);
 
--- Writes to sheets happen only through API functions that enforce the state
--- machine. No insert, update or delete policy is granted to end-user roles.
+CREATE TABLE public.client_orgs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    nda_required boolean DEFAULT false NOT NULL,
+    nda_file_id uuid,
+    nda_uploaded_at timestamp with time zone,
+    allow_aps_processing boolean DEFAULT true NOT NULL,
+    allow_native_download boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
--- Example policy (notifications): users see their own notifications only.
-create policy notifications_own on notifications
-  for select to authenticated
-  using (user_id = auth.uid());
+CREATE TABLE public.conflict_messages (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    conflict_id uuid NOT NULL,
+    author_id uuid NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT conflict_messages_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 10000)))
+);
 
--- =====================================================================
--- End of draft schema v2.
--- =====================================================================
+CREATE TABLE public.conflicts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    client_org_id uuid NOT NULL,
+    sheet_id uuid,
+    transmittal_id uuid,
+    subject text NOT NULL,
+    status public.conflict_status DEFAULT 'open'::public.conflict_status NOT NULL,
+    raised_by uuid NOT NULL,
+    due_at timestamp with time zone NOT NULL,
+    first_response_at timestamp with time zone,
+    closed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT conflicts_subject_check CHECK (((char_length(subject) >= 1) AND (char_length(subject) <= 200)))
+);
+
+CREATE TABLE public.digests (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    recipient_id uuid NOT NULL,
+    digest_date date NOT NULL,
+    trigger_type text NOT NULL,
+    deterministic_text text NOT NULL,
+    ai_text text,
+    ai_validated boolean DEFAULT false NOT NULL,
+    ai_rejection_reason text,
+    sent_text text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT digests_trigger_type_check CHECK ((trigger_type = ANY (ARRAY['scheduled'::text, 'on_demand'::text])))
+);
+
+CREATE TABLE public.disciplines (
+    code text NOT NULL,
+    name text NOT NULL,
+    sort_order integer NOT NULL
+);
+
+CREATE TABLE public.events (
+    id bigint NOT NULL,
+    type text NOT NULL,
+    project_id uuid,
+    entity_type text,
+    entity_id uuid,
+    actor_id uuid,
+    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
+    rule_version integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.events ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+CREATE TABLE public.exports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    requested_by uuid,
+    status public.export_status DEFAULT 'queued'::public.export_status NOT NULL,
+    storage_path text,
+    sha256 text,
+    size_bytes bigint,
+    expires_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    completed_at timestamp with time zone
+);
+
+CREATE TABLE public.files (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    sheet_id uuid,
+    revision_id uuid,
+    storage_bucket text DEFAULT 'drawings'::text NOT NULL,
+    storage_path text NOT NULL,
+    original_name text NOT NULL,
+    format public.file_format NOT NULL,
+    size_bytes bigint NOT NULL,
+    sha256 text,
+    state public.file_state DEFAULT 'uploading'::public.file_state NOT NULL,
+    aps_urn text,
+    aps_job_id text,
+    translation_attempts integer DEFAULT 0 NOT NULL,
+    uploaded_by uuid,
+    uploaded_at timestamp with time zone DEFAULT now() NOT NULL,
+    aps_object_id text,
+    aps_status text DEFAULT 'not_started'::text NOT NULL,
+    aps_error text,
+    aps_checked_at timestamp with time zone,
+    size_at_issue bigint,
+    CONSTRAINT files_aps_status_check CHECK ((aps_status = ANY (ARRAY['not_started'::text, 'uploading'::text, 'uploaded'::text, 'translating'::text, 'success'::text, 'failed'::text, 'unsupported'::text]))),
+    CONSTRAINT files_size_bytes_check CHECK ((size_bytes >= 0))
+);
+
+CREATE TABLE public.holidays (
+    day date NOT NULL,
+    name text NOT NULL,
+    scope text DEFAULT 'firm'::text NOT NULL
+);
+
+CREATE TABLE public.notifications (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    event_id bigint,
+    title text NOT NULL,
+    body text,
+    link text,
+    read_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.profiles (
+    id uuid NOT NULL,
+    full_name text NOT NULL,
+    email text NOT NULL,
+    phone_e164 text,
+    client_org_id uuid,
+    is_active boolean DEFAULT true NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.projects (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    code text NOT NULL,
+    name text NOT NULL,
+    client_org_id uuid,
+    status text DEFAULT 'active'::text NOT NULL,
+    start_date date,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT projects_status_check CHECK ((status = ANY (ARRAY['active'::text, 'on_hold'::text, 'closed'::text, 'exported'::text, 'deleted'::text])))
+);
+
+CREATE TABLE public.register_imports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    uploaded_by uuid,
+    file_id uuid,
+    status text DEFAULT 'validating'::text NOT NULL,
+    rows_total integer DEFAULT 0 NOT NULL,
+    rows_ok integer DEFAULT 0 NOT NULL,
+    rows_failed integer DEFAULT 0 NOT NULL,
+    errors jsonb DEFAULT '[]'::jsonb NOT NULL,
+    confirmed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    history_rows integer DEFAULT 0 NOT NULL,
+    CONSTRAINT register_imports_status_check CHECK ((status = ANY (ARRAY['validating'::text, 'ready'::text, 'confirmed'::text, 'failed'::text, 'cancelled'::text])))
+);
+
+CREATE TABLE public.review_comments (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    revision_id uuid NOT NULL,
+    author_id uuid NOT NULL,
+    body text NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    resolved_by uuid,
+    resolved_at timestamp with time zone,
+    resolution_note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT review_comments_status_check CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text])))
+);
+
+CREATE TABLE public.revisions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    sheet_id uuid NOT NULL,
+    rev_code text NOT NULL,
+    seq integer NOT NULL,
+    status public.revision_status DEFAULT 'wip'::public.revision_status NOT NULL,
+    purpose public.issue_purpose,
+    issued_at timestamp with time zone,
+    issued_by uuid,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT revisions_issued_fields CHECK (((status = 'wip'::public.revision_status) OR ((issued_at IS NOT NULL) AND (issued_by IS NOT NULL)))),
+    CONSTRAINT revisions_rev_code_check CHECK ((rev_code ~ '^R[0-9]{1,3}$'::text)),
+    CONSTRAINT revisions_seq_check CHECK ((seq >= 0))
+);
+
+CREATE TABLE public.rfis (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    number text NOT NULL,
+    subject text NOT NULL,
+    body text,
+    sheet_id uuid,
+    priority public.priority_level DEFAULT 'minor'::public.priority_level NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    raised_by uuid,
+    assignee_id uuid,
+    due_date date,
+    answer text,
+    answered_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rfis_status_check CHECK ((status = ANY (ARRAY['open'::text, 'answered'::text, 'closed'::text])))
+);
+
+CREATE TABLE public.rule_versions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    rule_id uuid NOT NULL,
+    version integer NOT NULL,
+    definition jsonb NOT NULL,
+    changed_by uuid,
+    changed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.rules (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid,
+    kind text NOT NULL,
+    name text NOT NULL,
+    definition jsonb NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    version integer DEFAULT 1 NOT NULL,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT rules_kind_check CHECK ((kind = ANY (ARRAY['critical_clash'::text, 'critical_rfi'::text, 'critical_revision'::text, 'alert_event'::text])))
+);
+
+CREATE TABLE public.settings (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid,
+    key text NOT NULL,
+    value jsonb NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.sheets (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    sheet_number text NOT NULL,
+    title text NOT NULL,
+    discipline_code text NOT NULL,
+    status public.sheet_status DEFAULT 'not_started'::public.sheet_status NOT NULL,
+    owner_id uuid,
+    due_date date,
+    current_revision_id uuid,
+    is_live boolean GENERATED ALWAYS AS ((status = ANY (ARRAY['issued'::public.sheet_status, 'gfc'::public.sheet_status, 'ifc'::public.sheet_status]))) STORED,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.status_history (
+    id bigint NOT NULL,
+    entity_type text NOT NULL,
+    entity_id uuid NOT NULL,
+    from_state text,
+    to_state text NOT NULL,
+    actor_id uuid,
+    note text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE public.status_history ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.status_history_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+CREATE TABLE public.submittals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    number text NOT NULL,
+    item text NOT NULL,
+    sheet_id uuid,
+    status text DEFAULT 'submitted'::text NOT NULL,
+    due_date date,
+    submitted_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT submittals_status_check CHECK ((status = ANY (ARRAY['submitted'::text, 'under_review'::text, 'approved'::text, 'approved_with_comments'::text, 'rejected'::text])))
+);
+
+CREATE TABLE public.transmittal_counters (
+    project_id uuid NOT NULL,
+    yyyymm text NOT NULL,
+    last_value integer DEFAULT 0 NOT NULL,
+    CONSTRAINT transmittal_counters_yyyymm_check CHECK ((yyyymm ~ '^[0-9]{6}$'::text))
+);
+
+CREATE TABLE public.transmittal_items (
+    transmittal_id uuid NOT NULL,
+    revision_id uuid NOT NULL
+);
+
+CREATE TABLE public.transmittals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    project_id uuid NOT NULL,
+    number text NOT NULL,
+    recipient_org_id uuid,
+    recipient_text text,
+    sent_at timestamp with time zone,
+    created_by uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.user_capacity (
+    user_id uuid NOT NULL,
+    sheets_per_week integer DEFAULT 0 NOT NULL,
+    hours_per_week numeric(6,1) DEFAULT 0 NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_capacity_hours_per_week_check CHECK ((hours_per_week >= (0)::numeric)),
+    CONSTRAINT user_capacity_sheets_per_week_check CHECK ((sheets_per_week >= 0))
+);
+
+CREATE TABLE public.user_roles (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    role public.role_code NOT NULL,
+    project_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT user_roles_admin_is_firmwide CHECK (((role = 'admin'::public.role_code) = (project_id IS NULL)))
+);
+
+CREATE TABLE public.whatsapp_event_settings (
+    event_type text NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    updated_by uuid,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.whatsapp_inbound (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    from_phone text NOT NULL,
+    recipient_id uuid,
+    body text,
+    command text,
+    is_allowed boolean NOT NULL,
+    reply_outbox_id uuid,
+    received_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.whatsapp_outbox (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    recipient_id uuid NOT NULL,
+    kind text NOT NULL,
+    event_id bigint,
+    template_code text NOT NULL,
+    variables jsonb DEFAULT '{}'::jsonb NOT NULL,
+    body_preview text,
+    dedupe_key text NOT NULL,
+    status public.outbox_status DEFAULT 'queued'::public.outbox_status NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    wa_message_id text,
+    sent_at timestamp with time zone,
+    last_error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    delivery_status text,
+    delivery_error text,
+    CONSTRAINT whatsapp_outbox_kind_check CHECK ((kind = ANY (ARRAY['alert'::text, 'digest'::text, 'command_reply'::text, 'escalation'::text, 'health'::text])))
+);
+
+CREATE TABLE public.whatsapp_recipients (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    profile_id uuid,
+    phone_e164 text NOT NULL,
+    opted_in boolean DEFAULT false NOT NULL,
+    opt_in_confirmed_at timestamp with time zone,
+    opted_out_at timestamp with time zone,
+    active boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE public.whatsapp_sessions (
+    id text NOT NULL,
+    ciphertext text NOT NULL,
+    iv text NOT NULL,
+    tag text NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.attachments
+    ADD CONSTRAINT attachments_file_id_key UNIQUE (file_id);
+
+ALTER TABLE ONLY public.attachments
+    ADD CONSTRAINT attachments_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT audit_log_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.authority_checklists
+    ADD CONSTRAINT authority_checklists_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.authority_templates
+    ADD CONSTRAINT authority_templates_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.authority_templates
+    ADD CONSTRAINT authority_templates_unique UNIQUE (authority, item);
+
+ALTER TABLE ONLY public.change_requests
+    ADD CONSTRAINT change_requests_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.clash_sheets
+    ADD CONSTRAINT clash_sheets_pkey PRIMARY KEY (clash_id, sheet_id);
+
+ALTER TABLE ONLY public.clashes
+    ADD CONSTRAINT clashes_number_unique UNIQUE (project_id, number);
+
+ALTER TABLE ONLY public.clashes
+    ADD CONSTRAINT clashes_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.client_orgs
+    ADD CONSTRAINT client_orgs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.conflict_messages
+    ADD CONSTRAINT conflict_messages_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.digests
+    ADD CONSTRAINT digests_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.disciplines
+    ADD CONSTRAINT disciplines_pkey PRIMARY KEY (code);
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.exports
+    ADD CONSTRAINT exports_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_storage_path_key UNIQUE (storage_path);
+
+ALTER TABLE ONLY public.holidays
+    ADD CONSTRAINT holidays_pkey PRIMARY KEY (day);
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_email_key UNIQUE (email);
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT projects_code_key UNIQUE (code);
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT projects_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.register_imports
+    ADD CONSTRAINT register_imports_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.review_comments
+    ADD CONSTRAINT review_comments_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.revisions
+    ADD CONSTRAINT revisions_code_unique UNIQUE (sheet_id, rev_code);
+
+ALTER TABLE ONLY public.revisions
+    ADD CONSTRAINT revisions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.revisions
+    ADD CONSTRAINT revisions_seq_unique UNIQUE (sheet_id, seq);
+
+ALTER TABLE ONLY public.rfis
+    ADD CONSTRAINT rfis_number_unique UNIQUE (project_id, number);
+
+ALTER TABLE ONLY public.rfis
+    ADD CONSTRAINT rfis_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.rule_versions
+    ADD CONSTRAINT rule_versions_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.rule_versions
+    ADD CONSTRAINT rule_versions_unique UNIQUE (rule_id, version);
+
+ALTER TABLE ONLY public.rules
+    ADD CONSTRAINT rules_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_unique UNIQUE NULLS NOT DISTINCT (project_id, key);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_number_unique UNIQUE (project_id, sheet_number);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.status_history
+    ADD CONSTRAINT status_history_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.submittals
+    ADD CONSTRAINT submittals_number_unique UNIQUE (project_id, number);
+
+ALTER TABLE ONLY public.submittals
+    ADD CONSTRAINT submittals_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.transmittal_counters
+    ADD CONSTRAINT transmittal_counters_pkey PRIMARY KEY (project_id, yyyymm);
+
+ALTER TABLE ONLY public.transmittal_items
+    ADD CONSTRAINT transmittal_items_pkey PRIMARY KEY (transmittal_id, revision_id);
+
+ALTER TABLE ONLY public.transmittals
+    ADD CONSTRAINT transmittals_number_key UNIQUE (number);
+
+ALTER TABLE ONLY public.transmittals
+    ADD CONSTRAINT transmittals_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.user_capacity
+    ADD CONSTRAINT user_capacity_pkey PRIMARY KEY (user_id);
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_unique UNIQUE (user_id, role, project_id);
+
+ALTER TABLE ONLY public.whatsapp_event_settings
+    ADD CONSTRAINT whatsapp_event_settings_pkey PRIMARY KEY (event_type);
+
+ALTER TABLE ONLY public.whatsapp_inbound
+    ADD CONSTRAINT whatsapp_inbound_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.whatsapp_outbox
+    ADD CONSTRAINT whatsapp_outbox_dedupe_key_key UNIQUE (dedupe_key);
+
+ALTER TABLE ONLY public.whatsapp_outbox
+    ADD CONSTRAINT whatsapp_outbox_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.whatsapp_recipients
+    ADD CONSTRAINT whatsapp_recipients_phone_e164_key UNIQUE (phone_e164);
+
+ALTER TABLE ONLY public.whatsapp_recipients
+    ADD CONSTRAINT whatsapp_recipients_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.whatsapp_sessions
+    ADD CONSTRAINT whatsapp_sessions_pkey PRIMARY KEY (id);
+
+CREATE INDEX approvals_assignee_open ON public.approvals USING btree (assignee_id, status);
+
+CREATE INDEX clashes_project_status ON public.clashes USING btree (project_id, status, priority);
+
+CREATE INDEX conflicts_project_status ON public.conflicts USING btree (project_id, status, due_at);
+
+CREATE INDEX events_project_time ON public.events USING btree (project_id, created_at DESC);
+
+CREATE INDEX events_type_time ON public.events USING btree (type, created_at DESC);
+
+CREATE INDEX files_sheet ON public.files USING btree (sheet_id);
+
+CREATE INDEX notifications_user_unread ON public.notifications USING btree (user_id, read_at);
+
+CREATE INDEX review_comments_revision ON public.review_comments USING btree (revision_id);
+
+CREATE INDEX revisions_sheet ON public.revisions USING btree (sheet_id);
+
+CREATE INDEX rfis_project_status ON public.rfis USING btree (project_id, status, due_date);
+
+CREATE INDEX sheets_due ON public.sheets USING btree (due_date);
+
+CREATE INDEX sheets_owner ON public.sheets USING btree (owner_id);
+
+CREATE INDEX sheets_project_status ON public.sheets USING btree (project_id, status);
+
+CREATE INDEX user_roles_user ON public.user_roles USING btree (user_id);
+
+CREATE INDEX whatsapp_outbox_due ON public.whatsapp_outbox USING btree (status, next_attempt_at);
+
+CREATE INDEX whatsapp_outbox_wa_id ON public.whatsapp_outbox USING btree (wa_message_id);
+
+CREATE TRIGGER audit_no_truncate BEFORE TRUNCATE ON public.audit_log FOR EACH STATEMENT EXECUTE FUNCTION public.forbid_audit_change();
+
+CREATE TRIGGER audit_no_update_delete BEFORE DELETE OR UPDATE ON public.audit_log FOR EACH ROW EXECUTE FUNCTION public.forbid_audit_change();
+
+CREATE TRIGGER profiles_updated BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER projects_updated BEFORE UPDATE ON public.projects FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER revisions_immutable BEFORE UPDATE ON public.revisions FOR EACH ROW EXECUTE FUNCTION public.enforce_revision_immutable();
+
+CREATE TRIGGER rules_updated BEFORE UPDATE ON public.rules FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+CREATE TRIGGER sheets_updated BEFORE UPDATE ON public.sheets FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_decided_by_fkey FOREIGN KEY (decided_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_escalated_to_fkey FOREIGN KEY (escalated_to) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.approvals
+    ADD CONSTRAINT approvals_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.attachments
+    ADD CONSTRAINT attachments_file_id_fkey FOREIGN KEY (file_id) REFERENCES public.files(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.audit_log
+    ADD CONSTRAINT audit_log_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.authority_checklists
+    ADD CONSTRAINT authority_checklists_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.authority_checklists
+    ADD CONSTRAINT authority_checklists_responsible_id_fkey FOREIGN KEY (responsible_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.authority_checklists
+    ADD CONSTRAINT authority_checklists_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id);
+
+ALTER TABLE ONLY public.authority_checklists
+    ADD CONSTRAINT authority_checklists_ticked_by_fkey FOREIGN KEY (ticked_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.change_requests
+    ADD CONSTRAINT change_requests_approval_id_fkey FOREIGN KEY (approval_id) REFERENCES public.approvals(id);
+
+ALTER TABLE ONLY public.change_requests
+    ADD CONSTRAINT change_requests_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.change_requests
+    ADD CONSTRAINT change_requests_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.change_requests
+    ADD CONSTRAINT change_requests_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.revisions(id);
+
+ALTER TABLE ONLY public.change_requests
+    ADD CONSTRAINT change_requests_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.clash_sheets
+    ADD CONSTRAINT clash_sheets_clash_id_fkey FOREIGN KEY (clash_id) REFERENCES public.clashes(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.clash_sheets
+    ADD CONSTRAINT clash_sheets_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.clashes
+    ADD CONSTRAINT clashes_discipline_a_fkey FOREIGN KEY (discipline_a) REFERENCES public.disciplines(code);
+
+ALTER TABLE ONLY public.clashes
+    ADD CONSTRAINT clashes_discipline_b_fkey FOREIGN KEY (discipline_b) REFERENCES public.disciplines(code);
+
+ALTER TABLE ONLY public.clashes
+    ADD CONSTRAINT clashes_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.clashes
+    ADD CONSTRAINT clashes_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.client_orgs
+    ADD CONSTRAINT client_orgs_nda_file_fk FOREIGN KEY (nda_file_id) REFERENCES public.files(id);
+
+ALTER TABLE ONLY public.conflict_messages
+    ADD CONSTRAINT conflict_messages_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.conflict_messages
+    ADD CONSTRAINT conflict_messages_conflict_id_fkey FOREIGN KEY (conflict_id) REFERENCES public.conflicts(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_client_org_id_fkey FOREIGN KEY (client_org_id) REFERENCES public.client_orgs(id);
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_raised_by_fkey FOREIGN KEY (raised_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id);
+
+ALTER TABLE ONLY public.conflicts
+    ADD CONSTRAINT conflicts_transmittal_id_fkey FOREIGN KEY (transmittal_id) REFERENCES public.transmittals(id);
+
+ALTER TABLE ONLY public.digests
+    ADD CONSTRAINT digests_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.whatsapp_recipients(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.events
+    ADD CONSTRAINT events_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.exports
+    ADD CONSTRAINT exports_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.exports
+    ADD CONSTRAINT exports_requested_by_fkey FOREIGN KEY (requested_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.revisions(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.files
+    ADD CONSTRAINT files_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_client_org_fk FOREIGN KEY (client_org_id) REFERENCES public.client_orgs(id);
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_client_org_id_fkey FOREIGN KEY (client_org_id) REFERENCES public.client_orgs(id);
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.profiles
+    ADD CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id) ON DELETE RESTRICT;
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT projects_client_org_id_fkey FOREIGN KEY (client_org_id) REFERENCES public.client_orgs(id);
+
+ALTER TABLE ONLY public.projects
+    ADD CONSTRAINT projects_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.register_imports
+    ADD CONSTRAINT register_imports_file_id_fkey FOREIGN KEY (file_id) REFERENCES public.files(id);
+
+ALTER TABLE ONLY public.register_imports
+    ADD CONSTRAINT register_imports_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.register_imports
+    ADD CONSTRAINT register_imports_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.review_comments
+    ADD CONSTRAINT review_comments_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.review_comments
+    ADD CONSTRAINT review_comments_resolved_by_fkey FOREIGN KEY (resolved_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.review_comments
+    ADD CONSTRAINT review_comments_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.revisions(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.revisions
+    ADD CONSTRAINT revisions_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.revisions
+    ADD CONSTRAINT revisions_issued_by_fkey FOREIGN KEY (issued_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.revisions
+    ADD CONSTRAINT revisions_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.rfis
+    ADD CONSTRAINT rfis_assignee_id_fkey FOREIGN KEY (assignee_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.rfis
+    ADD CONSTRAINT rfis_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.rfis
+    ADD CONSTRAINT rfis_raised_by_fkey FOREIGN KEY (raised_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.rfis
+    ADD CONSTRAINT rfis_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id);
+
+ALTER TABLE ONLY public.rule_versions
+    ADD CONSTRAINT rule_versions_changed_by_fkey FOREIGN KEY (changed_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.rule_versions
+    ADD CONSTRAINT rule_versions_rule_id_fkey FOREIGN KEY (rule_id) REFERENCES public.rules(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.rules
+    ADD CONSTRAINT rules_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.rules
+    ADD CONSTRAINT rules_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.settings
+    ADD CONSTRAINT settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_current_revision_fk FOREIGN KEY (current_revision_id) REFERENCES public.revisions(id);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_discipline_code_fkey FOREIGN KEY (discipline_code) REFERENCES public.disciplines(code);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.sheets
+    ADD CONSTRAINT sheets_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.status_history
+    ADD CONSTRAINT status_history_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.submittals
+    ADD CONSTRAINT submittals_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.submittals
+    ADD CONSTRAINT submittals_sheet_id_fkey FOREIGN KEY (sheet_id) REFERENCES public.sheets(id);
+
+ALTER TABLE ONLY public.submittals
+    ADD CONSTRAINT submittals_submitted_by_fkey FOREIGN KEY (submitted_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.transmittal_counters
+    ADD CONSTRAINT transmittal_counters_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.transmittal_items
+    ADD CONSTRAINT transmittal_items_revision_id_fkey FOREIGN KEY (revision_id) REFERENCES public.revisions(id);
+
+ALTER TABLE ONLY public.transmittal_items
+    ADD CONSTRAINT transmittal_items_transmittal_id_fkey FOREIGN KEY (transmittal_id) REFERENCES public.transmittals(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.transmittals
+    ADD CONSTRAINT transmittals_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.transmittals
+    ADD CONSTRAINT transmittals_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.transmittals
+    ADD CONSTRAINT transmittals_recipient_org_id_fkey FOREIGN KEY (recipient_org_id) REFERENCES public.client_orgs(id);
+
+ALTER TABLE ONLY public.user_capacity
+    ADD CONSTRAINT user_capacity_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.user_roles
+    ADD CONSTRAINT user_roles_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.whatsapp_event_settings
+    ADD CONSTRAINT whatsapp_event_settings_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES public.profiles(id);
+
+ALTER TABLE ONLY public.whatsapp_inbound
+    ADD CONSTRAINT whatsapp_inbound_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.whatsapp_recipients(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.whatsapp_inbound
+    ADD CONSTRAINT whatsapp_inbound_reply_outbox_id_fkey FOREIGN KEY (reply_outbox_id) REFERENCES public.whatsapp_outbox(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.whatsapp_outbox
+    ADD CONSTRAINT whatsapp_outbox_event_id_fkey FOREIGN KEY (event_id) REFERENCES public.events(id) ON DELETE SET NULL;
+
+ALTER TABLE ONLY public.whatsapp_outbox
+    ADD CONSTRAINT whatsapp_outbox_recipient_id_fkey FOREIGN KEY (recipient_id) REFERENCES public.whatsapp_recipients(id) ON DELETE CASCADE;
+
+ALTER TABLE ONLY public.whatsapp_recipients
+    ADD CONSTRAINT whatsapp_recipients_profile_id_fkey FOREIGN KEY (profile_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+ALTER TABLE public.approvals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY approvals_read ON public.approvals FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.attachments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY attachments_internal ON public.attachments FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.files f
+  WHERE ((f.id = attachments.file_id) AND (public.is_admin() OR public.has_internal_project_role(f.project_id))))));
+
+CREATE POLICY audit_admin ON public.audit_log FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.audit_log ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.authority_checklists ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY authority_checklists_internal ON public.authority_checklists FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.authority_templates ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY authority_templates_read ON public.authority_templates FOR SELECT TO authenticated USING ((public.is_admin() OR (EXISTS ( SELECT 1
+   FROM public.user_roles ur
+  WHERE ((ur.user_id = auth.uid()) AND (ur.role <> 'client'::public.role_code))))));
+
+ALTER TABLE public.change_requests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY change_requests_internal ON public.change_requests FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.clash_sheets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY clash_sheets_internal ON public.clash_sheets FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.clashes c
+  WHERE ((c.id = clash_sheets.clash_id) AND (public.is_admin() OR public.has_internal_project_role(c.project_id))))));
+
+ALTER TABLE public.clashes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY clashes_read ON public.clashes FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.client_orgs ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.conflict_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY conflict_messages_internal ON public.conflict_messages FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.conflicts c
+  WHERE ((c.id = conflict_messages.conflict_id) AND (public.is_admin() OR public.has_internal_project_role(c.project_id))))));
+
+CREATE POLICY conflict_messages_read_client ON public.conflict_messages FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.conflicts c
+  WHERE ((c.id = conflict_messages.conflict_id) AND (c.client_org_id = ( SELECT profiles.client_org_id
+           FROM public.profiles
+          WHERE (profiles.id = auth.uid())))))));
+
+ALTER TABLE public.conflicts ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY conflicts_internal ON public.conflicts FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+CREATE POLICY conflicts_read_client ON public.conflicts FOR SELECT TO authenticated USING ((public.is_client_of_project(project_id) AND (client_org_id = ( SELECT profiles.client_org_id
+   FROM public.profiles
+  WHERE (profiles.id = auth.uid())))));
+
+ALTER TABLE public.digests ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY digests_admin ON public.digests FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.disciplines ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY disciplines_read ON public.disciplines FOR SELECT TO authenticated USING (true);
+
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY events_read ON public.events FOR SELECT TO authenticated USING ((public.is_admin() OR ((project_id IS NOT NULL) AND public.has_internal_project_role(project_id))));
+
+ALTER TABLE public.exports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY exports_admin ON public.exports FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.files ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY files_read_client ON public.files FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.revisions r
+  WHERE ((r.id = files.revision_id) AND (r.status = ANY (ARRAY['issued'::public.revision_status, 'superseded'::public.revision_status])) AND public.is_client_of_project(files.project_id)))));
+
+CREATE POLICY files_read_internal ON public.files FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.holidays ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY holidays_read ON public.holidays FOR SELECT TO authenticated USING (true);
+
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY notifications_own ON public.notifications FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+CREATE POLICY notifications_read_own ON public.notifications FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY profiles_admin ON public.profiles FOR SELECT TO authenticated USING (public.is_admin());
+
+CREATE POLICY profiles_self ON public.profiles FOR SELECT TO authenticated USING ((id = auth.uid()));
+
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY projects_read ON public.projects FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(id)));
+
+ALTER TABLE public.register_imports ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY register_imports_internal ON public.register_imports FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.review_comments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY review_comments_internal ON public.review_comments FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM (public.revisions r
+     JOIN public.sheets s ON ((s.id = r.sheet_id)))
+  WHERE ((r.id = review_comments.revision_id) AND (public.is_admin() OR public.has_internal_project_role(s.project_id))))));
+
+ALTER TABLE public.revisions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY revisions_read_client ON public.revisions FOR SELECT TO authenticated USING (((status = ANY (ARRAY['issued'::public.revision_status, 'superseded'::public.revision_status])) AND (EXISTS ( SELECT 1
+   FROM public.sheets s
+  WHERE ((s.id = revisions.sheet_id) AND public.is_client_of_project(s.project_id))))));
+
+CREATE POLICY revisions_read_internal ON public.revisions FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.sheets s
+  WHERE ((s.id = revisions.sheet_id) AND (public.is_admin() OR public.has_internal_project_role(s.project_id))))));
+
+ALTER TABLE public.rfis ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY rfis_read ON public.rfis FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.rule_versions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY rule_versions_admin ON public.rule_versions FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.rules ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY rules_admin ON public.rules FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY settings_admin ON public.settings FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.sheets ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY sheets_read_client ON public.sheets FOR SELECT TO authenticated USING ((public.is_client_of_project(project_id) AND (status = ANY (ARRAY['issued'::public.sheet_status, 'gfc'::public.sheet_status, 'ifc'::public.sheet_status, 'superseded'::public.sheet_status]))));
+
+CREATE POLICY sheets_read_internal ON public.sheets FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.status_history ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY status_history_internal ON public.status_history FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.sheets s
+  WHERE ((s.id = status_history.entity_id) AND (public.is_admin() OR public.has_internal_project_role(s.project_id))))));
+
+ALTER TABLE public.submittals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY submittals_internal ON public.submittals FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+ALTER TABLE public.transmittal_counters ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.transmittal_items ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY transmittal_items_internal ON public.transmittal_items FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public.transmittals t
+  WHERE (((t.id = transmittal_items.transmittal_id) AND (public.is_admin() OR public.has_internal_project_role(t.project_id))) OR (public.is_client_of_project(t.project_id) AND (t.sent_at IS NOT NULL))))));
+
+ALTER TABLE public.transmittals ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY transmittals_read ON public.transmittals FOR SELECT TO authenticated USING ((public.is_admin() OR public.has_internal_project_role(project_id)));
+
+CREATE POLICY transmittals_read_client ON public.transmittals FOR SELECT TO authenticated USING (public.is_client_of_project(project_id));
+
+ALTER TABLE public.user_capacity ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY user_capacity_read ON public.user_capacity FOR SELECT TO authenticated USING (((user_id = auth.uid()) OR public.is_admin()));
+
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY user_roles_self ON public.user_roles FOR SELECT TO authenticated USING ((user_id = auth.uid()));
+
+CREATE POLICY wa_event_settings_admin ON public.whatsapp_event_settings FOR SELECT TO authenticated USING (public.is_admin());
+
+CREATE POLICY wa_inbound_admin ON public.whatsapp_inbound FOR SELECT TO authenticated USING (public.is_admin());
+
+CREATE POLICY wa_outbox_admin ON public.whatsapp_outbox FOR SELECT TO authenticated USING (public.is_admin());
+
+CREATE POLICY wa_recipients_admin ON public.whatsapp_recipients FOR SELECT TO authenticated USING (public.is_admin());
+
+ALTER TABLE public.whatsapp_event_settings ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.whatsapp_inbound ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.whatsapp_outbox ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.whatsapp_recipients ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.whatsapp_sessions ENABLE ROW LEVEL SECURITY;
+
+\unrestrict 0ig6VHGkJvgUSJF5WljitfNGwdp4jfPGJg2wdX72lgSZlqkMJu9VhYxBRlBNLRH

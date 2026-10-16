@@ -1,6 +1,6 @@
 # Database Schema — Drawing Control & Alerts
 
-**Status:** Draft. The DDL is in `schema.sql` in this folder. It has not been executed. It must be applied to a Supabase **staging** project and tested before anything else depends on it.
+**Status:** Applied and tested locally on PostgreSQL 16 (migrations `20261016000000` to `20261016000400`). `schema.sql` in this folder is generated from those migrations (40 tables, 45 policies). Behaviour checks: `schema_behaviour_tests.sql` (27 checks, pass). Not yet applied to a Supabase project.
 **Target:** Supabase Postgres 15 or later, India region.
 
 ---
@@ -138,7 +138,7 @@ Attachments link through `attachments` with `entity_type = 'conflict_message'`.
 | Audit log is append-only | `audit_no_update_delete` and `audit_no_truncate` triggers |
 | Transmittal numbers unique and sequential per month | `transmittals.number` unique, counter upsert in function |
 | Transition guards (critical clashes open, checker sign-off, transmittal exists) | API layer (not in the database), with plain-text error messages |
-| Working days for SLAs | Worker code, using `holidays` (weekend pattern to confirm, O-A1) |
+| Working days for SLAs | Domain code, using `holidays`. Monday to Friday confirmed (16 Oct). No holiday list yet. |
 | Client sees only issued revisions | RLS, plus restricted views (section 6) |
 
 ---
@@ -200,7 +200,7 @@ Add more indexes after measuring real queries in the pilot. Do not add them spec
   - issued revisions (status `issued`, `gfc`, `ifc`) and their files, for projects linked to them;
   - the transmittals they received;
   - their own conflicts and the messages in them.
-- **Worker and API use the service role**, which bypasses RLS. Every query in that code must check project and recipient explicitly. This is a code review rule and is tested.
+- **Server code and the WhatsApp host use the service role**, which bypasses RLS. Every query in that code must check project and recipient explicitly. This is a code review rule and is tested.
 
 ### 6.2 Policy outline (to write and test in Phase 1)
 
@@ -214,13 +214,13 @@ Add more indexes after measuring real queries in the pilot. Do not add them spec
 | `approvals` | Requester, assignee, admin | Via API only |
 | `conflicts` and `conflict_messages` | Client of the project (own org), internal roles on the project | Client may create and reply on own conflicts. Firm replies via API |
 | `whatsapp_recipients` | Admin | Admin only |
-| `whatsapp_outbox` | Admin | Worker only (service role) |
-| `whatsapp_inbound` | Admin | Worker only |
-| `digests` | Admin, and the recipient | Worker only |
-| `events` | Internal roles on the project, admin | Via API and worker only |
-| `notifications` | The user only | Via API and worker only |
+| `whatsapp_outbox` | Admin | Server and host only (service role) |
+| `whatsapp_inbound` | Admin | Server and host only |
+| `digests` | Admin, and the recipient | Server and host only |
+| `events` | Internal roles on the project, admin | Via server code and the messaging runtime only |
+| `notifications` | The user only | Via server code only |
 | `audit_log` | Admin | Append-only, via triggers |
-| `exports` | Admin | Admin via API, worker builds |
+| `exports` | Admin | Admin via server code |
 | `settings` | Admin | Admin via API |
 | `rules`, `rule_versions` | Admin (and project heads if Q-P4 says so) | Admin via API |
 
@@ -255,7 +255,7 @@ No public buckets.
 | WhatsApp outbox and inbound logs | 12 months (proposed) | Automated cleanup job |
 | Digests | 12 months (proposed) | Automated cleanup job |
 | Events | While the project exists | With the project |
-| APS copies of source files | Deleted when the revision is superseded and no longer needed for viewing (O-A7) | Worker job |
+| APS copies of source files | Deleted when the revision is superseded and no longer needed for viewing (O-A7) | Scheduled job (not yet built) |
 
 Retention periods marked "proposed" need owner confirmation.
 
@@ -303,6 +303,8 @@ Future changes: versioned migration files under `supabase/migrations/`, each rev
 | `size_at_issue` on `files` | Size recorded at issue, used by the stale-revision check (FIL-05) |
 | `whatsapp_outbox` delivery columns | Cloud API message id, delivery status, error, attempt count |
 
+See the WhatsApp session table, the settings keys and the translation attempts in the 16 Oct section below.
+
 Row-level security: `20261016000300_rls_complete.sql` adds read policies for every table. End users have no write policies; all writes go through server actions using the service role, which checks roles in code.
 
 Verification: `supabase/tests/run_rls_tests.sh` runs the fixture and 31 checks on PostgreSQL 16 with a stub `auth.uid()`. Passed on 16 Oct 2026. It does not test against Supabase's own Auth service.
@@ -328,3 +330,5 @@ Settings keys read or written (table `settings`, `project_id` null):
 
 `files.translation_attempts` (already in the init schema) counts translation attempts. A retry is allowed
 while it is below 3.
+
+> Change block, 16 Oct 2026: references to the worker mean the messaging runtime and the WhatsApp host. The settings keys used are listed in the section above.

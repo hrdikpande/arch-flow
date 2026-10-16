@@ -112,3 +112,29 @@ Each daily item is created once per day through its dedupe key, so the frequent 
 See VERIFICATION.md. Automated suites cover the domain rules, the messaging pipeline against a real
 database, the WhatsApp Web wiring, the cron route, row-level security and the signed-in pages. Live
 WhatsApp, Autodesk and Vercel behaviour is not verified here.
+
+## 10. Data residency and third parties
+
+| Data | Where it goes | Who controls it | Status |
+|---|---|---|---|
+| Firm and project records, users, audit | Supabase Postgres (region open, O-A4) | Firm, via the Supabase project | Region not chosen. Decide before the pilot. |
+| Drawings (PDF) | Supabase Storage, private bucket, signed links (5 minutes) | Firm | In use |
+| CAD files (DWG, RVT, IFC, NWD) | Uploaded to Autodesk (APS) for translation and viewing | Autodesk terms and the NDA flag | Owner confirmed NWD cloud conversion is allowed. Scope for firm files (not only client files) to confirm. |
+| WhatsApp messages (pilot) | WhatsApp Web servers (through the host) | WhatsApp | Accepted risk, written acceptance open |
+| WhatsApp messages (production) | Meta Cloud API | Meta | Not live |
+| Digest wording (optional) | Google Gemini API | Google, only when enabled | Off until the owner decides which data may leave the firm |
+| WhatsApp session | Encrypted in Supabase, key on the host only | Firm, host operator | In use |
+| Hosting of the web app | Vercel (Pro). Region setting to confirm. | Vercel | Region not chosen |
+| Logs | Host and Vercel logs hold counts and status, not message text or drawings | Firm | In use |
+
+**Rules in the code:** the service role is used only on the server and on the host; nothing with the service role is in browser code. Secrets come from environment variables only. Client users never see WhatsApp settings or internal data (RLS tests).
+
+## 11. Changes since the first version (16 Oct 2026)
+
+- Netlify and Hostinger removed. Vercel Pro hosts the web app and runs the checks every minute.
+- The long-running worker became two parts: the messaging runtime (inside the web app) and the WhatsApp host (`apps/whatsapp-web`).
+- WhatsApp has two channels: QR-linked pilot on the host, and Cloud API for production.
+- Translation retry, and the `x-ads-force` header used only on retry.
+- One drawing viewer for internal users and clients, behind one set of access rules.
+- Full list: VERIFICATION.md section 10.
+

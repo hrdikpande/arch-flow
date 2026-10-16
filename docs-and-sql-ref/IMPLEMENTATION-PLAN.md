@@ -13,9 +13,9 @@ The team is **not yet confirmed**. The plan assumes the roles below. Fill in nam
 
 | Role | Assumed effort | Responsibilities | Name |
 |---|---|---|---|
-| Lead developer (full stack, owns architecture and reviews) | Full time | Schema, API, worker, code review, release | TBC |
+| Lead developer (full stack, owns architecture and reviews) | Full time | Schema, API, WhatsApp host, code review, release | TBC |
 | Developer (frontend, Angular) | Full time | Web app, `ds-*` components, client portal | TBC |
-| Developer (backend and worker) | Full time | API functions, worker, WhatsApp, digest, export | TBC |
+| Developer (backend and messaging) | Full time | API functions, WhatsApp host, digest, export | TBC |
 | Designer | Part time (about 2 days a week in phases 0–2, then as needed) | Screens, `ds-*` gaps, accessibility review | TBC |
 | QA | Part time (about 2 days a week from Phase 1) | Test plans, E2E, acceptance tests, UAT support | TBC |
 | Product owner (firm side) | About 2 hours a week, plus gate reviews | Decisions, acceptance, pilot management | Owner |
@@ -35,7 +35,7 @@ Work is grouped into six streams. Each feature belongs to one main stream.
 | B. Core product (web app) | Register, lifecycle UI, approvals, issues, dashboards | Frontend developer | REG, LIFE, REV, APR, CLS, RFI, SUB, CHG, RVW, AUT, WKL, DSH |
 | C. Files and viewing | Uploads, naming, PDF, Autodesk, NDA | Backend developer | FIL, VIEW, NDA, IMP |
 | D. Client portal and conflicts | Client routes, views, conflict thread | Frontend developer | CLI, CFL, TRN (client side) |
-| E. Worker and messaging | WhatsApp, outbox, commands, digest, Gemini, escalation jobs | Backend developer (worker) | WA, DIG, ESC, NTF, SYS |
+| E. Messaging and WhatsApp host | WhatsApp, outbox, commands, digest, Gemini, escalation jobs | Backend developer (messaging) | WA, DIG, ESC, NTF, SYS |
 | F. Export, rules and admin | Export, delete, reopen, rules editor, reports | Lead developer | EXP, RUL, REP, SET, AUD |
 
 **Design stream** runs alongside B and D: the designer supplies screens for each phase one phase ahead of development (so screens for Phase 3 are ready at the end of Phase 2).
@@ -53,7 +53,7 @@ Two-week sprints. Each sprint has a demo to the product owner on the last Thursd
 | S2 | 5–6 | 1 (end), 2 (start) | RLS test suite, revisions, import validation, upload start |
 | S3 | 7–8 | 2 | Import preview and confirm, uploads with resume, PDF viewer |
 | S4 | 9–10 | 2b, 3 (start) | Autodesk translation and viewer, NDA rules, guards start |
-| S5 | 11–12 | 3 | Guards, issue with supersession, approvals, bell, escalation, worker skeleton |
+| S5 | 11–12 | 3 | Guards, issue with supersession, approvals, bell, escalation, messaging skeleton |
 | S6 | 13–14 | 4 | Rules editor, clashes, RFIs, transmittals |
 | S7 | 15–16 | 4 (end), 5 (start) | Submittals, change tracking, review, checklists, dashboard, client invitations |
 | S8 | 17–18 | 5, 6 | Client portal pages, conflicts thread, working-day rule |
@@ -73,7 +73,7 @@ Sprint dates depend on the start date and the team (section 1). The table shows 
 
 | Environment | Purpose | Who can deploy | Data |
 |---|---|---|---|
-| Local | Development. Local Supabase stack, local worker with a test WhatsApp number | Developers | Seeded fake data only |
+| Local | Development. Local API harness (PostgREST and the gateway stub), WhatsApp host with the test number (QR) | Developers | Seeded fake data only |
 | Development | Shared, continuously deployed from the main branch | Automatic on merge | Seeded fake data |
 | Staging | Acceptance tests, owner demos, pilot rehearsal | Lead developer, on tag | Fake data, then the register dry run (non-client projects only) |
 | Production | Pilot and after | Lead developer, after gate sign-off | Real data |
@@ -89,11 +89,11 @@ Sprint dates depend on the start date and the team (section 1). The table shows 
 3. Deploy to staging. Run the automated suite and the smoke test (sign-in, open a register, upload a small PDF, approval round trip).
 4. Owner or lead reviews the gate checklist for the phase.
 5. Database migrations: backup taken, migration run, verified.
-6. Deploy to production (Netlify site, Supabase migration, worker image with the same tag).
+6. Deploy to production (Vercel Pro production deploy, Supabase migrations, WhatsApp host restarted on the same commit).
 7. Smoke test on production with an internal test account.
 8. Announce in the decision log.
 
-**Rollback:** redeploy the previous Netlify deploy (instant on Netlify), redeploy the previous worker image tag, and do not roll back migrations: write a forward fix instead. Each migration has a written "undo" note checked in review.
+**Rollback:** promote the previous Vercel deployment (instant), restart the WhatsApp host on the previous commit tag, set `MESSAGING_TRANSPORT` to empty to stop all sends at once, and do not roll back migrations: write a forward fix instead. Each migration has a written "undo" note checked in review.
 
 ---
 
@@ -122,7 +122,7 @@ Sprint dates depend on the start date and the team (section 1). The table shows 
 | Unit | Business rules: state machine, working days, transmittal numbering, digest validator, naming check | Karma/Jasmine or Vitest (O-T2) | Every commit |
 | Database | RLS policies, triggers (immutability, audit append-only), functions (transmittal number) | Supabase local stack and SQL tests | Every commit touching SQL |
 | API | Each endpoint: success, validation failure, refused role, refused client | Test runner with Supabase local | Every commit |
-| Worker | Outbox dedupe, caps, retries, STOP/START, command parsing, digest rendering | Test runner, fake WhatsApp adapter | Every commit |
+| Messaging and host | Outbox dedupe, caps, retries, STOP/START, command parsing, digest rendering, host wiring | Test runner, fake WhatsApp adapter | Every commit |
 | WhatsApp integration | Real messages on the test number: alert, command, STOP, START, reconnect | Manual script plus checklist | Each release touching WhatsApp, and before Gate G7 |
 | Autodesk integration | Translation and viewing of one sample file per format | Test account, non-client files only | Before Gate G2b, and on each APS change |
 | Gemini validation | Validator test set (50+ inputs) and injection set | Unit tests with recorded fixtures | Phase 8 and any prompt change |
@@ -176,7 +176,7 @@ Sprint dates depend on the start date and the team (section 1). The table shows 
 - **Change control:** any change to a P0 feature, the scope, the schedule or the budget goes to the owner in writing. The owner approves or rejects in the decision log.
 - **Gate reviews** as in BUILD-PHASES.md, section 4. A gate is passed only in writing.
 - **Risk register** reviewed every two weeks (PRD section 9). Owner sees the top five risks.
-- **Cost tracking:** Supabase, Netlify, Hostinger, Autodesk and Gemini usage reviewed weekly during build and pilot, against the plan confirmed in O5 and O-A9.
+- **Cost tracking:** Supabase, Vercel Pro, Autodesk and Gemini usage reviewed weekly during build and pilot, against the plan confirmed in O5 and O-A9.
 
 ---
 
@@ -202,7 +202,7 @@ Sprint dates depend on the start date and the team (section 1). The table shows 
 | Scope creep from P1 items | P1 items gated in Phase 4; owner chooses what moves to pilot week 1 | Owner |
 | Working-day rules disputed | O-A1 confirmed before G3; test table signed off | Owner |
 | Gemini cost or quality | Fallback always available; cost tracked weekly | Lead developer |
-| Key person absence | Pairing on schema, worker and RLS; documented runbooks | Lead developer |
+| Key person absence | Pairing on schema, WhatsApp host and RLS; documented runbooks (WHATSAPP.md, HOSTING.md) | Lead developer |
 
 ---
 
@@ -225,3 +225,27 @@ If the pilot is expanded:
 - Secrets are rotated and held by the firm's named admins (not the developers).
 - Documentation updated to match what was built: FEATURES.md statuses, SCHEMA.md, ARCHITECTURE.md, runbook.
 - A post-pilot review is recorded in the decision log: what worked, what did not, what changes before expansion.
+
+
+## As built: testing, CI and release (updated 16 Oct 2026)
+
+| Layer | What runs | Where | Status |
+|---|---|---|---|
+| Typecheck | `npm run typecheck` (all workspaces) | CI job `test` | In use |
+| Domain and messaging unit tests | vitest, 67 and 35 tests | CI job `test` | In use |
+| WhatsApp Web helpers | `node --test`, encryption and store | CI job `test` | In use |
+| Build | `npm run build`, placeholder environment | CI jobs `test` and `e2e` | In use |
+| Smoke (browser) | Playwright, 11 tests, public pages and routes | CI job `e2e` | In use |
+| RLS | `supabase/tests/run_rls_tests.sh`, 31 checks on PostgreSQL 16 | Local | In use (not yet in CI) |
+| Behaviour | `docs-and-sql-ref/schema_behaviour_tests.sql`, 27 checks | Local | In use (not yet in CI) |
+| API harness | `supabase/tests/api/run.sh`: migrations, PostgREST, gateway stub, 7 integration tests, wiring tests, 9 signed-in browser tests | CI job `api-integration` | Written; first run on GitHub pending |
+
+**Release order (as built):**
+
+1. Merge to `main`. CI jobs must pass (`test`, `e2e`, and `api-integration` once it has run).
+2. Apply new migrations to the Supabase project, in name order. Each migration is written to be re-runnable (`if not exists`, `on conflict`).
+3. Vercel production deploy (Pro). Check `/api/health`. Cron runs every minute.
+4. WhatsApp host: pull `main`, `npm ci`, restart with pm2. Check the admin page shows Linked and sending.
+5. Smoke check: owner sends `help`, and an upload produces an alert.
+
+**Rollback (as built):** no down-migrations exist. Roll back the app by promoting the previous Vercel deployment and restarting the host on the previous commit. To stop every WhatsApp send at once, clear `MESSAGING_TRANSPORT` on Vercel. Database changes are fixed forward with a new migration.

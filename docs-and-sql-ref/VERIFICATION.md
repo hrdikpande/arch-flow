@@ -1,4 +1,6 @@
 # Verification Log — Documents v2 against our decisions
+> **Read section 10 first.** Sections 1 to 7 record the earlier checks and are kept as history. Where they describe the worker, Netlify, Hostinger, daily cron or a Cloud-only WhatsApp plan, section 10 gives the current position.
+
 
 **Checked:** 16 Oct 2026
 **Checked against:** the decisions recorded in our discussion (A1–A5, 1–44, 6a–6g, 7–12, 13–19, 20–44 as answered), SCOPE.md v1, and the three uploaded reference files.
@@ -309,3 +311,77 @@ documentation (Autodesk pages found by web search) and the `@supabase/ssr` sourc
 - Written acceptance of the WhatsApp Web ban risk for the pilot.
 - Holiday list: Monday to Friday until given.
 - Clash export format: still undecided. Send a sample CSV or XLSX.
+
+---
+
+## 10. Decision trace, corrections and change log (updated 16 Oct 2026)
+
+### 10.1 Decisions made in this round, traced to the documents
+
+| Decision (owner, 16 Oct 2026) | Where it is written | How it is checked |
+|---|---|---|
+| Hosting on Vercel Pro (per-minute checks) | ARCHITECTURE 1, 7, 11; TECH-STACK 3; HOSTING 2 | Cron route tested locally, three runs; schedule in `vercel.json`. Not run on Vercel (network). |
+| WhatsApp pilot: QR login, dedicated test number, owner and internal allowlist | WHATSAPP 1 to 3; FEATURES WA-01, WA-12; TECH-STACK 4 | Wiring tests (8 checks), encrypted session store, real Chromium launch. QR scan not done (network). |
+| Client-facing WhatsApp later, through the Cloud API | WHATSAPP 8; ARCHITECTURE 10 | Webhook signature tests. Not live. |
+| Alerts on for every upload and for decisions: approval approved and rejected, conflict answered, transmittal sent, revision issued | WHATSAPP 4.1; FEATURES WA-02; migration `20261016000400` | Database check: 13 events enabled. |
+| STOP confirmation must reach the person | WHATSAPP 5; FEATURES WA-08 | Integration test (STOP, reply sent, alerts blocked, START restores). |
+| Working days Monday to Friday, no holiday list yet | FEATURES SET-08; SCHEMA (holidays) | Not tested against a holiday list. Open. |
+| Autodesk keys in `.env` (not in code or chat) | HOSTING 5; `.env.example` | Keys not yet provided. Open. |
+| NWD cloud conversion allowed | ARCHITECTURE 10; TECH-STACK 5 | Scope for firm files to confirm. |
+| Clients may view CAD in the portal, and PDF; download when allowed | FEATURES VIEW-05, CLI-05; DESIGN 17 | Signed-in client tests (portal list, PDF, CAD status, NDA block). |
+| Clash files use the same viewer as drawings | DESIGN 17; FEATURES CLS-05 | Signed-in owner test (clash page with the PDF). |
+| Supabase project: link and keys to be shared by the owner | HOSTING 4; TECH-STACK 2 | Open until the project is provided. |
+
+### 10.2 Corrections to earlier documents
+
+| Earlier statement | Corrected to | Where |
+|---|---|---|
+| Netlify hosts the web app | Vercel Pro | TECH-STACK 3, 7 |
+| Hostinger VPS or container runs the worker | WhatsApp host on the owner's machine or a VM, under pm2 | BUILD-PHASES 0, 3, 7; PRD 5; HOSTING 3 |
+| Docker image for the worker | Not used (Docker not available; host runs Node) | TECH-STACK 7 |
+| Worker runs the scheduled jobs | Messaging runtime runs them in the Vercel cron every minute, and the host sends | ARCHITECTURE 2, 7 |
+| Daily cron (Hobby) | Every minute on Vercel Pro | HOSTING 2; ARCHITECTURE 7 |
+| WhatsApp through the Cloud API only | Two channels: QR-linked pilot on the host, Cloud API for production | WHATSAPP 1 |
+| Decision 3 (test number now, Cloud API later) | Pilot on the host and production on Cloud API (both now) | FEATURES Appendix C |
+| Decision 31 (Hostinger Docker worker) | Superseded | FEATURES Appendix C |
+| Schema "not executed" | Applied and tested on PostgreSQL 16 locally; `schema.sql` regenerated from the migrations | SCHEMA; schema.sql |
+| Behaviour tests printed "expect" labels only | Each check passes or fails; 27 checks | schema_behaviour_tests.sql |
+| Translation sent `x-ads-force` on every start | Only on retry | ARCHITECTURE 5; HOSTING 5 |
+| No retry for failed translation | Retry up to three attempts | FEATURES VIEW-03 |
+| Clients not shown CAD in the portal | Shown when the NDA flag allows | FEATURES VIEW-05 |
+| Owner alert on WhatsApp disconnect | Not built. The admin page shows the state. | BUILD-PHASES 3; FEATURES WA-11 |
+
+### 10.3 Change log (16 Oct 2026)
+
+| Change | Reason | Documents updated |
+|---|---|---|
+| WhatsApp Web host (`apps/whatsapp-web`): QR login, encrypted session, commands, heartbeat, pm2 config | Pilot channel the owner asked for | WHATSAPP (new), HOSTING (new), ARCHITECTURE, TECH-STACK, FEATURES, BUILD-PHASES |
+| Messaging runtime: transport injection, queue-only mode, heartbeat, inbound logged once | Vercel cannot hold the session; one sender only | ARCHITECTURE 2, 3, 7, 8 |
+| STOP reply allowed after STOP; alerts stay blocked | Confirmation must arrive | WHATSAPP 5; FEATURES WA-08 |
+| Vercel cron every minute (Pro) | Owner's Pro plan | HOSTING 2; TECH-STACK 3 |
+| Migration `20261016000400`: session table, 13 alert events on | Owner's decision list | SCHEMA; schema.sql |
+| Translation retry and retry-only `x-ads-force`; viewer API region setting | Autodesk reference and EMEA data | FEATURES VIEW-03; HOSTING 5; DESIGN 17 |
+| One drawing viewer; client portal file view; clash detail page | Owner's request for one viewer and client CAD | DESIGN 17; FEATURES CLI-05, CLS-05; ARCHITECTURE 5 |
+| Admin WhatsApp page shows host status | Vercel cannot see the host | DESIGN 17; FEATURES WA-11, WA-12 |
+| API harness (PostgREST, gateway stub, integration, wiring, signed-in tests) and CI job | Verify the not-yet-tested paths locally | IMPLEMENTATION-PLAN "As built"; TECH-STACK 6; HOSTING 7 |
+| Behaviour tests automated; schema regenerated | Docs must match what runs | SCHEMA; schema.sql; schema_behaviour_tests.sql |
+| Playwright config: signed-in tests run only through the harness | Default run failed without the harness | README; TECH-STACK 6 |
+| `.env.example` grouped by role; unused variables removed | Clear what each machine needs | HOSTING; README |
+
+### 10.4 What was verified for these documents
+
+- The "built" statuses in FEATURES, BUILD-PHASES and TECH-STACK were checked against code, tests or the local stack. The check was targeted (each area, and each claim that something is not built), not a line-by-line audit of the long plan text, which is historical.
+- Features not built are named as not built: EXP (export, delete, reopen), the NDA file upload, the owner disconnect alert, the email fallback, the over-capacity digest flag, the admin health page, and the digest late note.
+- Stale terms (worker, Netlify, Hostinger, Docker, daily cron) are removed from the plan documents, except where a line states the correction.
+
+### 10.5 Open items that block the pilot
+
+1. Supabase project link and keys (owner to share).
+2. Autodesk credentials in `.env` (owner to provide).
+3. Test phone and a QR scan on the dedicated number; network access to `web.whatsapp.com` on the host.
+4. Written acceptance of the WhatsApp Web ban risk.
+5. Which data may go to Gemini (or keep it off).
+6. Holiday list, or confirmation that none applies.
+7. Clash export format (sample file).
+8. Supabase and Vercel regions (data residency, ARCHITECTURE 10).
+
