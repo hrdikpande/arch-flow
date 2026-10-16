@@ -10,15 +10,18 @@
  */
 
 const fs = require('node:fs/promises');
+const path = require('node:path');
 const { encryptBytes, decryptBytes } = require('./crypto');
 
-function createSessionStore({ repository, sessionKey }) {
+function createSessionStore({ repository, sessionKey, dataPath }) {
   return {
     async sessionExists({ session }) {
       return (await repository.get(session)) !== null;
     },
     async save({ session, zipPath }) {
-      const bytes = await fs.readFile(zipPath);
+      const archivePath = zipPath ?? (dataPath ? path.join(dataPath, `${session}.zip`) : undefined);
+      if (!archivePath) throw new Error('WhatsApp session archive path is not configured');
+      const bytes = await fs.readFile(archivePath);
       const record = encryptBytes(bytes, sessionKey);
       await repository.put(session, { ...record, updated_at: new Date().toISOString() });
     },

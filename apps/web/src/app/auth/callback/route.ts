@@ -8,14 +8,17 @@ const TYPES: readonly EmailOtpType[] = ['invite', 'recovery', 'magiclink', 'emai
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = request.nextUrl;
   const tokenHash = searchParams.get('token_hash');
+  const code = searchParams.get('code');
   const type = searchParams.get('type') as EmailOtpType | null;
   const next = searchParams.get('next') ?? '/auth/setup';
   const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/auth/setup';
-  if (!tokenHash || !type || !TYPES.includes(type)) {
+  if ((!tokenHash && !code) || (type && !TYPES.includes(type))) {
     return NextResponse.redirect(new URL('/login?error=link', origin));
   }
   const supabase = await userSupabase();
-  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+  const { error } = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash as string });
   if (error) return NextResponse.redirect(new URL('/login?error=link', origin));
   return NextResponse.redirect(new URL(safeNext, origin));
 }

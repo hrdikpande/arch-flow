@@ -5,8 +5,8 @@
 
 do $$
 declare
-  v_email text := 'owner@example.com';   -- <-- change
-  v_name  text := 'Owner name';          -- <-- change
+  v_email text := 'admin@arch-flow.com';
+  v_name  text := 'Admin';
   v_uid   uuid;
 begin
   select id into v_uid from auth.users where email = v_email;

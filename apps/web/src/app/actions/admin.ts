@@ -9,6 +9,16 @@ import { ALERT_EVENT_TYPES_LIST } from '@/lib/alert-events';
 import { errorState, type FormState } from './types';
 
 const ROLE_CODES = ['admin', 'project_head', 'discipline_lead', 'drafter', 'checker', 'client'] as const;
+const DB_RULE_KIND_BY_RECORD_KIND = {
+  clash: 'critical_clash',
+  rfi: 'critical_rfi',
+  revision: 'critical_revision',
+} as const;
+const RECORD_KIND_BY_DB_RULE_KIND = {
+  critical_clash: 'clash',
+  critical_rfi: 'rfi',
+  critical_revision: 'revision',
+} as const;
 
 function text(form: FormData, name: string): string {
   return String(form.get(name) ?? '').trim();
@@ -195,7 +205,7 @@ export async function loadDraftRules(): Promise<void> {
   const db = adminDb();
   const { count } = await db.from('rules').select('id', { count: 'exact', head: true });
   if ((count ?? 0) > 0) return;
-  const rows = DRAFT_CRITICAL_RULES.map((r) => ({ kind: r.kind, name: r.label, definition: r.definition, active: true, created_by: access.userId }));
+  const rows = DRAFT_CRITICAL_RULES.map((r) => ({ kind: DB_RULE_KIND_BY_RECORD_KIND[r.kind], name: r.label, definition: r.definition, active: true, created_by: access.userId }));
   const { error } = await db.from('rules').insert(rows);
   if (error) throw new Error(error.message);
   await writeAudit({ actorId: access.userId, action: 'rules.drafts_loaded', after: { count: rows.length } });
@@ -219,7 +229,9 @@ export async function saveRule(_prev: FormState, form: FormData): Promise<FormSt
     const db = adminDb();
     const { data: rule } = await db.from('rules').select('id, kind, version, definition').eq('id', id).maybeSingle();
     if (!rule) throw new Error('Rule not found.');
-    const problems = validateRuleDefinition(rule.kind as RuleRecordKind, definition);
+    const recordKind = RECORD_KIND_BY_DB_RULE_KIND[rule.kind as keyof typeof RECORD_KIND_BY_DB_RULE_KIND];
+    if (!recordKind) throw new Error(`Unsupported rule kind "${rule.kind}".`);
+    const problems = validateRuleDefinition(recordKind as RuleRecordKind, definition);
     if (problems.length > 0) throw new Error(problems.join(' '));
     await db.from('rule_versions').insert({ rule_id: rule.id, version: rule.version, definition: rule.definition, changed_by: access.userId });
     const { error } = await db.from('rules').update({ name, definition, active, version: rule.version + 1 }).eq('id', rule.id);

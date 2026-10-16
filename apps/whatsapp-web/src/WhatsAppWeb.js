@@ -65,7 +65,7 @@ function createWhatsAppWeb(options) {
   let heartbeatTimer = null;
   let flushing = false;
 
-  const store = createSessionStore({ repository, sessionKey });
+  const store = createSessionStore({ repository, sessionKey, dataPath });
   const client = new ClientClass({
     authStrategy: new RemoteAuthClass({
       clientId: SESSION_ROW_ID,
